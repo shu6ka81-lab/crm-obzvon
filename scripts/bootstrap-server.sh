@@ -124,6 +124,21 @@ say "Первый пользователь"
 docker compose exec -T app node dist-scripts/ensure-admin.js
 
 # ---------------------------------------------------------------- 5. HTTPS
+# В образах хостеров часто предустановлены nginx и apache. Они занимают
+# порт 80, из-за чего Caddy молча не поднимается и сайт остаётся недоступен.
+say "Освобождение портов 80 и 443"
+for svc in nginx apache2 httpd lighttpd; do
+  if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}\.service"; then
+    systemctl disable --now "$svc" >/dev/null 2>&1 || true
+    echo "$svc остановлен и убран из автозапуска"
+  fi
+done
+
+if ss -tlnp 2>/dev/null | grep -qE ':(80|443)\s' ; then
+  echo "внимание: порты всё ещё кем-то заняты:" >&2
+  ss -tlnp | grep -E ':(80|443)\s' >&2
+fi
+
 say "HTTPS через Caddy"
 if ! command -v caddy >/dev/null 2>&1; then
   apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
@@ -145,8 +160,17 @@ $DOMAIN {
     }
 }
 EOF
-systemctl reload caddy || systemctl restart caddy
-echo "Caddy настроен на $DOMAIN, сертификат получит сам"
+systemctl enable caddy >/dev/null 2>&1 || true
+systemctl restart caddy
+sleep 2
+if systemctl is-active --quiet caddy; then
+  echo "Caddy работает, слушает:"
+  ss -tlnp | grep -E ':(80|443)\s' || echo "  порты пока не заняты — проверьте журнал"
+else
+  echo "Caddy не запустился. Журнал:" >&2
+  journalctl -u caddy -n 20 --no-pager >&2
+  exit 1
+fi
 
 # ---------------------------------------------------------------- 6. Файрвол
 say "Файрвол"
