@@ -25,6 +25,46 @@ else
   echo "уже установлен"
 fi
 
+# ------------------------------------------------------- 1.2 зеркала реестра
+# С российских серверов Docker Hub обычно недоступен: соединение до
+# registry-1.docker.io отваливается по таймауту. Прописываем зеркала —
+# Docker пробует их по очереди и только потом идёт в Docker Hub напрямую.
+say "Зеркала реестра образов"
+mkdir -p /etc/docker
+if [[ -f /etc/docker/daemon.json ]] && grep -q registry-mirrors /etc/docker/daemon.json; then
+  echo "уже настроены"
+else
+  cat > /etc/docker/daemon.json <<'JSON'
+{
+  "registry-mirrors": [
+    "https://mirror.gcr.io",
+    "https://cr.yandex/mirror",
+    "https://dockerhub.timeweb.cloud",
+    "https://huecker.io"
+  ]
+}
+JSON
+  systemctl restart docker
+  sleep 3
+  echo "прописаны, docker перезапущен"
+fi
+
+# Проверяем, что образы теперь тянутся — иначе дальше всё равно упадёт
+if ! timeout 90 docker pull postgres:17-alpine >/dev/null 2>&1; then
+  cat >&2 <<'ERR'
+
+Не удалось скачать образ ни через одно из зеркал.
+
+Что попробовать:
+  1. Повторить запуск — зеркала бывают перегружены.
+  2. Дописать своё зеркало в /etc/docker/daemon.json,
+     затем: systemctl restart docker && bash i.sh
+
+ERR
+  exit 1
+fi
+echo "образы скачиваются"
+
 # ---------------------------------------------------------------- 1.5 swap
 # Сборка Next.js — самая тяжёлая операция. На 2 ГБ без swap она падает по памяти.
 say "Проверка памяти"
