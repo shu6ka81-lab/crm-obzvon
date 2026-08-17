@@ -1,0 +1,9 @@
+# Скрипты для сервера всегда с Unix-переводами строк,
+# иначе bash на Linux не сможет их выполнить после клонирования с Windows.
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
+*.ts text
+*.tsx text
+*.json text
+*.md text
