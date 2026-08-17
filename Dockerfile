@@ -16,6 +16,17 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # страницы динамические, префетча БД на этапе build нет.
 RUN npm run build
 
+# Служебные скрипты собираем в обычный JS: в рантайме не будет ни tsx,
+# ни его зависимостей. Каждый файл самодостаточен.
+# pglite исключаем — в продакшене работает postgres по DATABASE_URL.
+RUN npx esbuild \
+      scripts/migrate.ts \
+      scripts/ensure-admin.ts \
+      scripts/set-password.ts \
+    --bundle --platform=node --format=cjs --target=node24 \
+    --outdir=dist-scripts \
+    --external:@electric-sql/pglite
+
 # ---------- рантайм ----------
 FROM node:24-alpine AS runner
 WORKDIR /app
@@ -29,14 +40,10 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Миграции и скрипты обслуживания едут вместе с образом
+# SQL-миграции и собранные скрипты обслуживания.
+# Запускаются как: node dist-scripts/migrate.js
 COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
-COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
-COPY --from=builder --chown=nextjs:nodejs /app/lib ./lib
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/tsx ./node_modules/tsx
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/postgres ./node_modules/postgres
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/exceljs ./node_modules/exceljs
+COPY --from=builder --chown=nextjs:nodejs /app/dist-scripts ./dist-scripts
 
 USER nextjs
 EXPOSE 3000

@@ -116,10 +116,10 @@ done
 
 # ---------------------------------------------------------------- 4. Миграции
 say "Миграции"
-docker compose exec -T app npx tsx scripts/migrate.ts
+docker compose exec -T app node dist-scripts/migrate.js
 
 say "Первый пользователь"
-docker compose exec -T app npx tsx scripts/ensure-admin.ts
+docker compose exec -T app node dist-scripts/ensure-admin.js
 
 # ---------------------------------------------------------------- 5. HTTPS
 say "HTTPS через Caddy"
@@ -186,7 +186,7 @@ cat <<EOF
   3. Заведите остальных пользователей:
 
      cd $APP_DIR
-     docker compose exec app npx tsx scripts/set-password.ts lev '<пароль>' 'Лев' manager
+     docker compose exec app node dist-scripts/set-password.js lev '<пароль>' 'Лев' manager
 
 Обновление системы в дальнейшем:
 
