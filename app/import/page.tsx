@@ -1,7 +1,9 @@
 import { desc } from 'drizzle-orm'
+import { revalidatePath } from 'next/cache'
 import { getDb } from '@/lib/db'
 import { importBatches } from '@/lib/db/schema'
 import { importActivityReport } from '@/lib/import/importClients'
+import { syncCampaigns } from '@/lib/import/buildCampaigns'
 import { dateRu, dateTimeRu, num } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
@@ -12,6 +14,11 @@ async function upload(formData: FormData) {
   if (!(file instanceof File) || file.size === 0) return
   const buf = Buffer.from(await file.arrayBuffer())
   await importActivityReport(buf, file.name)
+  // Списки на обзвон собираются сразу — чтобы после загрузки
+  // не требовалось запускать скрипты на сервере.
+  await syncCampaigns(file.name)
+  revalidatePath('/')
+  revalidatePath('/import')
 }
 
 export default async function ImportPage() {

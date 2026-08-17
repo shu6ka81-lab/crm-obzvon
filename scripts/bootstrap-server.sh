@@ -78,6 +78,9 @@ done
 say "Миграции"
 docker compose exec -T app npx tsx scripts/migrate.ts
 
+say "Первый пользователь"
+docker compose exec -T app npx tsx scripts/ensure-admin.ts
+
 # ---------------------------------------------------------------- 5. HTTPS
 say "HTTPS через Caddy"
 if ! command -v caddy >/dev/null 2>&1; then
@@ -132,15 +135,21 @@ cat <<EOF
 Адрес:  https://$DOMAIN
         (сертификат выпускается 10–30 секунд после первого обращения)
 
-Осталось завести пользователей:
+Что дальше:
 
-  cd $APP_DIR
-  docker compose exec app npx tsx scripts/set-password.ts denis '<пароль>' 'Денис' head
-  docker compose exec app npx tsx scripts/set-password.ts lev '<пароль>' 'Лев' manager
+  1. Откройте адрес выше и войдите под логином и паролем, которые
+     напечатаны выше в разделе «Первый пользователь».
 
-И загрузить выгрузку из 1С в разделе «Импорт».
-Кампании собираются командой:
+  2. Раздел «Импорт» — загрузите выгрузку из 1С «Активность контрагентов».
+     Кампании обзвона соберутся автоматически.
 
-  docker compose exec app npx tsx scripts/seed.ts /путь/к/выгрузке.xlsx
+  3. Заведите остальных пользователей:
+
+     cd $APP_DIR
+     docker compose exec app npx tsx scripts/set-password.ts lev '<пароль>' 'Лев' manager
+
+Обновление системы в дальнейшем:
+
+  cd $APP_DIR && git pull && docker compose up -d --build
 
 EOF

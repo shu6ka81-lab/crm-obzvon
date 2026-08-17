@@ -10,6 +10,17 @@ const nextConfig: NextConfig = {
    * ExcelJS по той же причине: внутри потоковая работа с zip.
    */
   serverExternalPackages: ['@electric-sql/pglite', 'exceljs'],
+
+  experimental: {
+    serverActions: {
+      /**
+       * Выгрузки из 1С крупные: отчёт по контрагентам — 1,3 МБ,
+       * справочник и продажи за два года будут в разы больше.
+       * Значение по умолчанию (1 МБ) режет загрузку молча, без ошибки.
+       */
+      bodySizeLimit: '64mb',
+    },
+  },
 }
 
 export default nextConfig
