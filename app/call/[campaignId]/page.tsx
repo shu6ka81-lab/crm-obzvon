@@ -101,6 +101,12 @@ export default async function CallPage({
             >
               весь список ({funnel.inList})
             </Link>
+            <Link
+              href={`/funnel/${campaignId}`}
+              className="text-xs font-medium text-slate-700 underline-offset-2 hover:underline"
+            >
+              воронка
+            </Link>
           </div>
           <h1 className="mt-1 text-xl font-semibold tracking-tight">{c.name}</h1>
         </div>
@@ -281,6 +287,7 @@ export default async function CallPage({
             clientId={c.id}
             linkId={next.linkId}
             presetBudget={next.presetBudget}
+            currentStage={next.stage}
           />
 
           <form

@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from 'react'
 import { saveTouch, type TouchState } from '@/app/actions'
+import { ALL_STAGES, STAGE_HINT, STAGE_LABEL, type Stage } from '@/lib/funnel'
 
 const FIELD =
   'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-200'
@@ -41,20 +42,30 @@ export function CallForm({
   clientId,
   linkId,
   presetBudget,
+  currentStage,
 }: {
   campaignId: number
   clientId: number
   linkId: number
   presetBudget: number | null
+  currentStage: Stage
 }) {
   const [showQual, setShowQual] = useState(true)
+  const [gotQuote, setGotQuote] = useState(false)
+  const [stage, setStage] = useState<Stage>(currentStage)
+  const [stageTouched, setStageTouched] = useState(false)
   const [state, formAction, pending] = useActionState<TouchState, FormData>(saveTouch, null)
+
+  // Если стадию не трогали руками, её выберет сервер по итогу звонка:
+  // на клиенте это делать нельзя — состояние не успеет попасть в форму.
 
   return (
     <form action={formAction} className="space-y-5">
       <input type="hidden" name="campaignId" value={campaignId} />
       <input type="hidden" name="clientId" value={clientId} />
       <input type="hidden" name="linkId" value={linkId} />
+      <input type="hidden" name="currentStage" value={currentStage} />
+      <input type="hidden" name="stageTouched" value={stageTouched ? '1' : ''} />
 
       {/* --- квалификация --- */}
       <div className="rounded-lg border border-slate-200 bg-white">
@@ -182,10 +193,38 @@ export function CallForm({
             type="checkbox"
             name="gotQuoteRequest"
             value="true"
+            checked={gotQuote}
+            onChange={(e) => {
+              setGotQuote(e.target.checked)
+              if (!stageTouched && e.target.checked) setStage('audit')
+            }}
             className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
           />
-          Договорились о просчёте — это целевой результат звонка
+          Договорились о просчёте — получаем перечень позиций
         </label>
+
+        <div className="mt-4">
+          <label className={LABEL} htmlFor="stage">
+            Стадия после звонка
+          </label>
+          <select
+            id="stage"
+            name="stage"
+            value={stage}
+            onChange={(e) => {
+              setStage(e.target.value as Stage)
+              setStageTouched(true)
+            }}
+            className={FIELD}
+          >
+            {ALL_STAGES.map((s) => (
+              <option key={s} value={s}>
+                {STAGE_LABEL[s]}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">{STAGE_HINT[stage]}</p>
+        </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div>

@@ -1,10 +1,12 @@
 import { and, asc, desc, eq, isNull, or, sql, count } from 'drizzle-orm'
+import { ALL_STAGES, FUNNEL_ORDER, type Stage } from './funnel'
 import { getDb } from './db'
 import {
   campaignClients,
   campaigns,
   clients,
   qualifications,
+  stageChanges,
   tasks,
   touches,
   users,
@@ -83,6 +85,7 @@ export async function getNextInCampaign(campaignId: number) {
       presetSupplier: campaignClients.presetSupplier,
       presetPurchases: campaignClients.presetPurchases,
       presetNote: campaignClients.presetNote,
+      stage: campaignClients.stage,
       client: clients,
     })
     .from(campaignClients)
@@ -111,6 +114,7 @@ export async function getCampaignClient(campaignId: number, clientId: number) {
       presetSupplier: campaignClients.presetSupplier,
       presetPurchases: campaignClients.presetPurchases,
       presetNote: campaignClients.presetNote,
+      stage: campaignClients.stage,
       client: clients,
     })
     .from(campaignClients)
@@ -288,6 +292,70 @@ export async function getFunnel(campaignId: number): Promise<Funnel> {
     qualified: Number(qual?.n ?? 0),
     quoteRequests: Number(calls?.quotes ?? 0),
   }
+}
+
+export interface StageRow {
+  stage: string
+  count: number
+  /** Сколько компаний дошли до этой стадии или дальше. */
+  reached: number
+  /** Деньги: своя история покупок или квартальные закупки у конкурента. */
+  money: number
+}
+
+/**
+ * Воронка по стадиям. «Дошли» считается накопительно по порядку стадий —
+ * иначе конверсия между ступенями не считается: клиент, который уже
+ * на «КП», через «Знакомство» тоже проходил.
+ */
+export async function getStageFunnel(campaignId: number): Promise<StageRow[]> {
+  const db = await getDb()
+  const rows = await db
+    .select({
+      stage: campaignClients.stage,
+      count: sql<number>`count(*)::int`,
+      money: sql<number>`coalesce(sum(coalesce(nullif(${campaignClients.presetBudget}, 0), ${clients.totalSum}, 0)), 0)::bigint`,
+    })
+    .from(campaignClients)
+    .innerJoin(clients, eq(clients.id, campaignClients.clientId))
+    .where(eq(campaignClients.campaignId, campaignId))
+    .groupBy(campaignClients.stage)
+
+  const byStage = new Map(rows.map((r) => [r.stage as Stage, r]))
+  const order = FUNNEL_ORDER
+
+  return ALL_STAGES.map((stage) => {
+    const own = byStage.get(stage)
+    const reached =
+      stage === 'lost'
+        ? Number(own?.count ?? 0)
+        : order
+            .slice(order.indexOf(stage))
+            .reduce((acc, s) => acc + Number(byStage.get(s)?.count ?? 0), 0)
+    return {
+      stage,
+      count: Number(own?.count ?? 0),
+      reached,
+      money: Number(own?.money ?? 0),
+    }
+  })
+}
+
+export async function getStageHistory(campaignClientId: number) {
+  const db = await getDb()
+  return db
+    .select({
+      id: stageChanges.id,
+      fromStage: stageChanges.fromStage,
+      toStage: stageChanges.toStage,
+      comment: stageChanges.comment,
+      createdAt: stageChanges.createdAt,
+      userName: users.name,
+    })
+    .from(stageChanges)
+    .leftJoin(users, eq(users.id, stageChanges.userId))
+    .where(eq(stageChanges.campaignClientId, campaignClientId))
+    .orderBy(desc(stageChanges.createdAt))
 }
 
 export async function listUsers() {

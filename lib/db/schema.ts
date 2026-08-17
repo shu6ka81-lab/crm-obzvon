@@ -145,12 +145,39 @@ export const qualifications = pgTable(
 
 // ---------------------------------------------------------------- кампании
 
+/**
+ * Состояние в очереди обзвона — про механику: кого показывать следующим.
+ * Не путать со стадией воронки: «не взяли трубку» двигает по очереди,
+ * но клиент как был лидом, так и остался.
+ */
 export const campaignClientState = pgEnum('campaign_client_state', [
   'pending', // не начат
   'in_progress', // в работе
   'done', // отработан
   'postponed', // отложен
 ])
+
+/**
+ * Стадия воронки — про продажу. Порядок важен: он же задаёт вид отчёта.
+ */
+export const funnelStage = pgEnum('funnel_stage', [
+  'lead', // в списке, разговора ещё не было
+  'contacted', // знакомство состоялось, вышли на контактное лицо
+  'audit', // аудит цен: ждём или получили перечень позиций от клиента
+  'quote', // КП собрано и отправлено
+  'decision', // решение за клиентом
+  'won', // начали работать
+  'lost', // отказ
+])
+
+export const FUNNEL_ORDER = [
+  'lead',
+  'contacted',
+  'audit',
+  'quote',
+  'decision',
+  'won',
+] as const
 
 export const campaigns = pgTable('campaigns', {
   id: serial('id').primaryKey(),
@@ -175,6 +202,10 @@ export const campaignClients = pgTable(
     position: integer('position').notNull().default(0),
     state: campaignClientState('state').notNull().default('pending'),
 
+    stage: funnelStage('stage').notNull().default('lead'),
+    stageChangedAt: timestamp('stage_changed_at', { withTimezone: true }),
+    lostReason: text('lost_reason'),
+
     /**
      * Для списков из книг продаж конкурентов часть фактов известна до звонка:
      * сколько компания закупает, как часто и у кого. Менеджер это подтверждает,
@@ -191,6 +222,26 @@ export const campaignClients = pgTable(
     uniqueIndex('campaign_clients_uq').on(t.campaignId, t.clientId),
     index('campaign_clients_queue_idx').on(t.campaignId, t.state, t.position),
   ],
+)
+
+/**
+ * История движения по воронке. Нужна, чтобы считать конверсию между
+ * стадиями и видеть, где сделки застревают, — по текущей стадии этого не видно.
+ */
+export const stageChanges = pgTable(
+  'stage_changes',
+  {
+    id: serial('id').primaryKey(),
+    campaignClientId: integer('campaign_client_id')
+      .notNull()
+      .references(() => campaignClients.id),
+    fromStage: funnelStage('from_stage'),
+    toStage: funnelStage('to_stage').notNull(),
+    userId: integer('user_id').references(() => users.id),
+    comment: text('comment'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('stage_changes_link_idx').on(t.campaignClientId, t.createdAt)],
 )
 
 // ---------------------------------------------------------------- касания

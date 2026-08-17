@@ -29,6 +29,13 @@
       "when": 1786989759440,
       "tag": "0003_competitors",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786991263174,
+      "tag": "0004_funnel",
+      "breakpoints": true
     }
   ]
 }

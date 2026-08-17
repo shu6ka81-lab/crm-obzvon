@@ -7,7 +7,15 @@ import { SESSION_COOKIE } from '@/lib/auth/session'
 import { and, asc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDb } from '@/lib/db'
-import { campaignClients, qualifications, tasks, touches, users } from '@/lib/db/schema'
+import { suggestStage } from '@/lib/funnel'
+import {
+  campaignClients,
+  qualifications,
+  stageChanges,
+  tasks,
+  touches,
+  users,
+} from '@/lib/db/schema'
 
 const TouchSchema = z.object({
   campaignId: z.coerce.number().int().positive(),
@@ -28,7 +36,29 @@ const TouchSchema = z.object({
 
   nextStepDate: z.string().optional(),
   nextStepTitle: z.string().trim().max(300).optional(),
+
+  stage: z
+    .enum(['lead', 'contacted', 'audit', 'quote', 'decision', 'won', 'lost'])
+    .optional(),
+  currentStage: z
+    .enum(['lead', 'contacted', 'audit', 'quote', 'decision', 'won', 'lost'])
+    .optional(),
+  /** Пусто — стадию выберет сервер по итогу звонка. */
+  stageTouched: z.string().optional(),
 })
+
+/**
+ * Незаполненные поля формы приходят пустой строкой, а необязательные
+ * перечисления её не принимают — и вся форма молча не сохраняется.
+ * Поэтому пустые значения превращаем в «не задано».
+ */
+function formEntries(formData: FormData): Record<string, FormDataEntryValue | undefined> {
+  const out: Record<string, FormDataEntryValue | undefined> = {}
+  for (const [k, v] of formData.entries()) {
+    out[k] = typeof v === 'string' && v.trim() === '' ? undefined : v
+  }
+  return out
+}
 
 /** Число из поля ввода: пустое — null, «12 000» и «12000» — 12000. */
 function num(v: string | undefined): number | null {
@@ -60,9 +90,13 @@ async function currentUserId(): Promise<number | null> {
 export type TouchState = { ok: boolean; error?: string; savedAt?: number } | null
 
 export async function saveTouch(_prev: TouchState, formData: FormData): Promise<TouchState> {
-  const parsed = TouchSchema.safeParse(Object.fromEntries(formData))
+  const parsed = TouchSchema.safeParse(formEntries(formData))
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Некорректные данные' }
+    const where = parsed.error.issues
+      .map((i) => `${i.path.join('.') || '?'}: ${i.message}`)
+      .join('; ')
+    console.error('saveTouch: данные не прошли проверку —', where)
+    return { ok: false, error: where || 'Некорректные данные' }
   }
   const d = parsed.data
   const db = await getDb()
@@ -114,6 +148,33 @@ export async function saveTouch(_prev: TouchState, formData: FormData): Promise<
     })
   }
 
+  // Стадия воронки. Если её не выбирали руками — определяем по итогу звонка.
+  const current = d.currentStage ?? 'lead'
+  const nextStage =
+    d.stageTouched && d.stage
+      ? d.stage
+      : suggestStage(current, d.outcome, Boolean(d.gotQuoteRequest))
+
+  // Пишем только настоящий переход, иначе история забьётся пустыми записями.
+  if (d.linkId && nextStage !== current) {
+    await db
+      .update(campaignClients)
+      .set({
+        stage: nextStage,
+        stageChangedAt: new Date(),
+        lostReason: nextStage === 'lost' ? d.rejectReason || d.note || null : null,
+      })
+      .where(eq(campaignClients.id, d.linkId))
+
+    await db.insert(stageChanges).values({
+      campaignClientId: d.linkId,
+      fromStage: current,
+      toStage: nextStage,
+      userId,
+      comment: d.note || null,
+    })
+  }
+
   // Куда двигаем клиента в очереди
   if (d.linkId) {
     if (d.outcome === 'reached' || d.outcome === 'refused' || d.outcome === 'wrong_number') {
@@ -139,10 +200,64 @@ export async function saveTouch(_prev: TouchState, formData: FormData): Promise<
     }
   }
 
+  revalidatePath(`/call/${d.campaignId}/list`)
+  revalidatePath(`/funnel/${d.campaignId}`)
+
   revalidatePath(`/call/${d.campaignId}`)
   revalidatePath('/')
   revalidatePath('/tasks')
   return { ok: true, savedAt: Date.now() }
+}
+
+/**
+ * Перевести на другую стадию вне звонка — например, отметить отправку КП
+ * или начало работы. Возвращает ошибку текстом, чтобы форма её показала.
+ */
+export async function moveStage(formData: FormData) {
+  const schema = z.object({
+    linkId: z.coerce.number().int().positive(),
+    campaignId: z.coerce.number().int().positive(),
+    stage: z.enum(['lead', 'contacted', 'audit', 'quote', 'decision', 'won', 'lost']),
+    comment: z.string().trim().max(2000).optional(),
+  })
+  const parsed = schema.safeParse(formEntries(formData))
+  if (!parsed.success) return
+
+  const { linkId, campaignId, stage, comment } = parsed.data
+  const db = await getDb()
+  const userId = await currentUserId()
+
+  const [current] = await db
+    .select({ stage: campaignClients.stage })
+    .from(campaignClients)
+    .where(eq(campaignClients.id, linkId))
+    .limit(1)
+
+  if (!current || current.stage === stage) return
+
+  await db
+    .update(campaignClients)
+    .set({
+      stage,
+      stageChangedAt: new Date(),
+      lostReason: stage === 'lost' ? comment || null : null,
+      // Дошедшие до конца воронки убираем из очереди обзвона
+      state: stage === 'won' || stage === 'lost' ? 'done' : undefined,
+    })
+    .where(eq(campaignClients.id, linkId))
+
+  await db.insert(stageChanges).values({
+    campaignClientId: linkId,
+    fromStage: current.stage,
+    toStage: stage,
+    userId,
+    comment: comment || null,
+  })
+
+  revalidatePath(`/call/${campaignId}`)
+  revalidatePath(`/call/${campaignId}/list`)
+  revalidatePath(`/funnel/${campaignId}`)
+  revalidatePath('/')
 }
 
 export async function skipClient(campaignId: number, linkId: number) {
