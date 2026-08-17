@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm'
+import { eq, inArray, isNotNull, sql } from 'drizzle-orm'
 import { getDb } from '../db'
 import { clients, importBatches, campaigns, campaignClients } from '../db/schema'
 import { parseActivityReport, type ParsedClient } from './parse1c'
@@ -39,7 +39,7 @@ export async function importActivityReport(
       .select({ code1c: clients.code1c })
       .from(clients)
       .where(inArray(clients.code1c, codes.slice(i, i + CHUNK)))
-    rows.forEach((r) => existing.add(r.code1c))
+    rows.forEach((r) => r.code1c && existing.add(r.code1c))
   }
 
   const now = new Date()
@@ -66,6 +66,8 @@ export async function importActivityReport(
       .values(slice)
       .onConflictDoUpdate({
         target: clients.code1c,
+        // Индекс частичный — условие обязано совпасть с тем, что в схеме
+        targetWhere: isNotNull(clients.code1c),
         set: {
           name: sql`excluded.name`,
           segment: sql`excluded.segment`,

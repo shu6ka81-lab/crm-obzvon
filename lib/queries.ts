@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, sql, count } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, or, sql, count } from 'drizzle-orm'
 import { getDb } from './db'
 import {
   campaignClients,
@@ -52,7 +52,10 @@ export async function listCampaigns() {
       total: count(campaignClients.id),
       done: sql<number>`count(*) filter (where ${campaignClients.state} = 'done')::int`,
       pending: sql<number>`count(*) filter (where ${campaignClients.state} = 'pending')::int`,
-      sum: sql<number>`coalesce(sum(${clients.totalSum}), 0)::bigint`,
+      /** Сколько эти компании купили у нас за всё время. */
+      sumOwn: sql<number>`coalesce(sum(${clients.totalSum}), 0)::bigint`,
+      /** Сколько они закупают на стороне за квартал — для списков конкурентов. */
+      sumPreset: sql<number>`coalesce(sum(${campaignClients.presetBudget}), 0)::bigint`,
     })
     .from(campaigns)
     .leftJoin(campaignClients, eq(campaignClients.campaignId, campaigns.id))
@@ -77,6 +80,8 @@ export async function getNextInCampaign(campaignId: number) {
       position: campaignClients.position,
       state: campaignClients.state,
       presetBudget: campaignClients.presetBudget,
+      presetSupplier: campaignClients.presetSupplier,
+      presetPurchases: campaignClients.presetPurchases,
       presetNote: campaignClients.presetNote,
       client: clients,
     })
@@ -103,6 +108,8 @@ export async function getCampaignClient(campaignId: number, clientId: number) {
       position: campaignClients.position,
       state: campaignClients.state,
       presetBudget: campaignClients.presetBudget,
+      presetSupplier: campaignClients.presetSupplier,
+      presetPurchases: campaignClients.presetPurchases,
       presetNote: campaignClients.presetNote,
       client: clients,
     })
@@ -122,6 +129,13 @@ export async function listCampaignClients(campaignId: number) {
     .select({
       clientId: clients.id,
       code1c: clients.code1c,
+      key: clientKeySql,
+      inn: clients.inn,
+      source: clients.source,
+      presetBudget: campaignClients.presetBudget,
+      presetSupplier: campaignClients.presetSupplier,
+      presetPurchases: campaignClients.presetPurchases,
+      presetNote: campaignClients.presetNote,
       name: clients.name,
       totalSum: clients.totalSum,
       lastOrderDate: clients.lastOrderDate,
@@ -152,9 +166,34 @@ export async function getClientById(clientId: number) {
   return row ?? null
 }
 
-export async function getClientByCode(code: string) {
+/**
+ * Ключ клиента для ссылок: код 1С, если он есть, иначе ИНН, иначе id.
+ * У компаний из книг продаж конкурентов кода 1С нет.
+ */
+export const clientKeySql = sql<string>`coalesce(${clients.code1c}, ${clients.inn}, ${clients.id}::text)`
+
+export function clientKey(c: {
+  code1c?: string | null
+  inn?: string | null
+  id: number
+}): string {
+  return c.code1c ?? c.inn ?? String(c.id)
+}
+
+export async function getClientByKey(key: string) {
   const db = await getDb()
-  const [row] = await db.select().from(clients).where(eq(clients.code1c, code))
+  const asId = Number(key)
+  const [row] = await db
+    .select()
+    .from(clients)
+    .where(
+      or(
+        eq(clients.code1c, key),
+        eq(clients.inn, key),
+        Number.isInteger(asId) && asId > 0 ? eq(clients.id, asId) : undefined,
+      ),
+    )
+    .limit(1)
   return row ?? null
 }
 
@@ -201,7 +240,7 @@ export async function getOpenTasks(clientId?: number) {
       title: tasks.title,
       clientId: tasks.clientId,
       clientName: clients.name,
-      clientCode: clients.code1c,
+      clientKey: clientKeySql,
       assignee: users.name,
     })
     .from(tasks)

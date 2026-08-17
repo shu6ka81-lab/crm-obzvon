@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { desc, ilike, or, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
 import { clients } from '@/lib/db/schema'
-import { SEGMENT_LABEL } from '@/lib/queries'
+import { clientKey, SEGMENT_LABEL } from '@/lib/queries'
 import { dateRu, money, num } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
@@ -76,12 +76,14 @@ export default async function ClientsPage({
               <tr key={c.id} className="hover:bg-slate-50">
                 <td className="px-4 py-2">
                   <Link
-                    href={`/clients/${encodeURIComponent(c.code1c)}`}
+                    href={`/clients/${encodeURIComponent(clientKey(c))}`}
                     className="font-medium text-slate-900 hover:underline"
                   >
                     {c.name}
                   </Link>
-                  <div className="text-xs text-slate-400">{c.code1c}</div>
+                  <div className="text-xs text-slate-400">
+                    {c.source === 'competitor' ? `ИНН ${c.inn}` : c.code1c}
+                  </div>
                 </td>
                 <td className="px-4 py-2 text-slate-600">
                   {SEGMENT_LABEL[c.segment] ?? c.segment}

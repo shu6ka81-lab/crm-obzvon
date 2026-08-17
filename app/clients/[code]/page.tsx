@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
   CLIENT_TYPE_LABEL,
-  getClientByCode,
+  getClientByKey,
   getLatestQualification,
   getOpenTasks,
   getTouches,
@@ -25,7 +25,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 
 export default async function ClientCard({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
-  const client = await getClientByCode(decodeURIComponent(code))
+  const client = await getClientByKey(decodeURIComponent(code))
   if (!client) notFound()
 
   const [touches, qual, tasks] = await Promise.all([

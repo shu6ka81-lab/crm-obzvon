@@ -22,6 +22,13 @@
       "when": 1786975094567,
       "tag": "0002_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786989759440,
+      "tag": "0003_competitors",
+      "breakpoints": true
     }
   ]
 }

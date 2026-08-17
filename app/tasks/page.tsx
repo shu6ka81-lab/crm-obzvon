@@ -70,7 +70,7 @@ export default async function TasksPage() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium text-slate-900">{t.title}</div>
                     <Link
-                      href={`/clients/${encodeURIComponent(t.clientCode)}`}
+                      href={`/clients/${encodeURIComponent(t.clientKey)}`}
                       className="truncate text-xs text-slate-500 hover:text-slate-900"
                     >
                       {t.clientName}

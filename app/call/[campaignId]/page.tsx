@@ -138,15 +138,56 @@ export default async function CallPage({
               </div>
             ) : (
               <p className="text-sm text-red-900">
-                Телефона нет. В отчёте «Активность контрагентов» контактов не бывает —
-                нужна отдельная выгрузка справочника контрагентов из 1С с телефоном,
-                контактным лицом и почтой.
+                {c.source === 'competitor' ? (
+                  <>
+                    Телефона нет. В книге продаж контактов не бывает — их нужно найти
+                    по ИНН <span className="font-semibold">{c.inn}</span> через СБИС,
+                    Контур.Фокус или 2ГИС.
+                  </>
+                ) : (
+                  <>
+                    Телефона нет. В отчёте «Активность контрагентов» контактов не бывает —
+                    нужна отдельная выгрузка справочника контрагентов из 1С с телефоном,
+                    контактным лицом и почтой.
+                  </>
+                )}
               </p>
             )}
           </div>
 
+          {c.source === 'competitor' ? (
+            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+              <h2 className="mb-2 text-sm font-semibold text-indigo-950">
+                Закупает у конкурента
+              </h2>
+              <div className="divide-y divide-indigo-100">
+                <Row label="Поставщик" value={next.presetSupplier ?? '—'} />
+                <Row label="Закупок за квартал" value={num(next.presetPurchases)} />
+                <Row label="Сумма за квартал" value={money(next.presetBudget)} />
+                <Row label="ИНН" value={c.inn ?? '—'} />
+              </div>
+              {next.presetNote ? (
+                <p
+                  className={`mt-3 rounded-md p-2 text-xs ${
+                    next.presetNote.includes('⚠')
+                      ? 'bg-red-100 text-red-900'
+                      : 'bg-white/70 text-indigo-900'
+                  }`}
+                >
+                  {next.presetNote}
+                </p>
+              ) : null}
+              <p className="mt-3 text-xs text-indigo-900">
+                Это не холодный звонок: компания уже закупает офисные товары и тратит на них
+                деньги. Разговор о том, всё ли её устраивает у текущего поставщика.
+              </p>
+            </div>
+          ) : null}
+
           <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <h2 className="mb-2 text-sm font-semibold text-slate-900">Что известно из 1С</h2>
+            <h2 className="mb-2 text-sm font-semibold text-slate-900">
+              {c.source === 'competitor' ? 'История в нашей 1С' : 'Что известно из 1С'}
+            </h2>
             <div className="divide-y divide-slate-100">
               <Row label="Код в 1С" value={c.code1c} />
               <Row label="Сегмент" value={SEGMENT_LABEL[c.segment] ?? c.segment} />

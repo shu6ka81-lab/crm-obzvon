@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm'
 import {
   pgTable,
   pgEnum,
@@ -49,13 +50,24 @@ export const activitySegment = pgEnum('activity_segment', [
   'unknown',
 ])
 
+/** Откуда узнали о компании. */
+export const clientSource = pgEnum('client_source', [
+  'crm_1c', // выгрузка из 1С — действующий или бывший клиент
+  'competitor', // книга продаж конкурента — потенциальный клиент
+])
+
 export const clients = pgTable(
   'clients',
   {
     id: serial('id').primaryKey(),
 
-    /** Код контрагента в 1С — единственный надёжный ключ связи. */
-    code1c: varchar('code_1c', { length: 64 }).notNull(),
+    /**
+     * Код контрагента в 1С. Для компаний из книг продаж конкурентов его нет —
+     * там опознание идёт по ИНН.
+     */
+    code1c: varchar('code_1c', { length: 64 }),
+
+    source: clientSource('source').notNull().default('crm_1c'),
 
     name: text('name').notNull(),
     inn: varchar('inn', { length: 12 }),
@@ -88,10 +100,13 @@ export const clients = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex('clients_code_1c_uq').on(t.code1c),
+    // Оба ключа частичные: у клиентов из 1С нет ИНН, у конкурентских — кода.
+    uniqueIndex('clients_code_1c_uq').on(t.code1c).where(sql`${t.code1c} is not null`),
+    uniqueIndex('clients_inn_uq').on(t.inn).where(sql`${t.inn} is not null`),
     index('clients_segment_idx').on(t.segment),
     index('clients_total_sum_idx').on(t.totalSum),
     index('clients_name_idx').on(t.name),
+    index('clients_source_idx').on(t.source),
   ],
 )
 
@@ -161,10 +176,13 @@ export const campaignClients = pgTable(
     state: campaignClientState('state').notNull().default('pending'),
 
     /**
-     * Для КУДиР-списков бюджет известен до звонка — предзаполняем отсюда,
-     * менеджер только подтверждает.
+     * Для списков из книг продаж конкурентов часть фактов известна до звонка:
+     * сколько компания закупает, как часто и у кого. Менеджер это подтверждает,
+     * а не выясняет с нуля.
      */
     presetBudget: bigint('preset_budget', { mode: 'number' }),
+    presetSupplier: text('preset_supplier'),
+    presetPurchases: integer('preset_purchases'),
     presetNote: text('preset_note'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

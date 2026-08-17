@@ -73,13 +73,13 @@ export default async function CampaignList({
                 <td className="px-3 py-2 tabular-nums text-slate-400">{i + 1}</td>
                 <td className="px-3 py-2">
                   <Link
-                    href={`/clients/${encodeURIComponent(r.code1c)}`}
+                    href={`/clients/${encodeURIComponent(r.key)}`}
                     className="font-medium text-slate-900 hover:underline"
                   >
                     {r.name}
                   </Link>
                   <div className="text-xs text-slate-400">
-                    {r.code1c}
+                    {r.source === 'competitor' ? `ИНН ${r.inn}` : r.code1c}
                     {r.touchCount > 0
                       ? ` · касаний ${r.touchCount}${
                           r.lastOutcome ? `, последнее: ${OUTCOME_LABEL[r.lastOutcome] ?? ''}` : ''

@@ -31,9 +31,9 @@ export default async function Home() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Кампании обзвона</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Списки собраны из выгрузки 1С «Активность контрагентов». Очередь отсортирована по
-          сумме покупок — самые дорогие первыми.
+        <p className="mt-1 max-w-3xl text-sm text-slate-500">
+          Списки собраны из выгрузок 1С и книг продаж конкурентов. Очередь отсортирована по
+          деньгам: своя база — по сумме покупок, база конкурента — по баллу приоритета.
         </p>
       </div>
 
@@ -64,7 +64,15 @@ export default async function Home() {
 
               <div className="mt-5 grid grid-cols-2 gap-6 sm:grid-cols-6">
                 <Stat label="В списке" value={num(total)} />
-                <Stat label="Сумма покупок" value={money(Number(c.sum))} />
+                {Number(c.sumPreset) > 0 ? (
+                  <Stat
+                    label="Закупают за квартал"
+                    value={money(Number(c.sumPreset))}
+                    hint="у конкурента"
+                  />
+                ) : (
+                  <Stat label="Купили у нас" value={money(Number(c.sumOwn))} />
+                )}
                 <Stat label="Набрано" value={num(f.called)} />
                 <Stat label="Дозвонились" value={num(f.reached)} />
                 <Stat label="Квалифицированы" value={num(f.qualified)} />
