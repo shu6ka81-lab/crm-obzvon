@@ -290,6 +290,13 @@ export default async function CallPage({
             currentStage={next.stage}
           />
 
+          <Link
+            href={`/quote/new?client=${c.id}&link=${next.linkId}`}
+            className="inline-block rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50"
+          >
+            Аудит цен: собрать КП по списку клиента
+          </Link>
+
           <form
             action={async () => {
               'use server'

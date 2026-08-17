@@ -36,6 +36,20 @@
       "when": 1786991263174,
       "tag": "0004_funnel",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786993114603,
+      "tag": "0005_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786993486137,
+      "tag": "0006_quotes",
+      "breakpoints": true
     }
   ]
 }

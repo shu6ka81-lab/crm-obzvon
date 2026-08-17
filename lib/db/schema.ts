@@ -5,6 +5,7 @@ import {
   serial,
   integer,
   bigint,
+  doublePrecision,
   text,
   varchar,
   timestamp,
@@ -306,6 +307,103 @@ export const tasks = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('tasks_due_idx').on(t.status, t.dueDate), index('tasks_client_idx').on(t.clientId)],
+)
+
+// ---------------------------------------------------------------- каталог
+
+/**
+ * Прайс-лист, собранный из отчётов «Продажи товаров по номенклатуре».
+ * Цена берётся не из справочника, а из фактических продаж: это то,
+ * по чему реально отгружали, вместе с закупкой и наценкой.
+ */
+export const catalogItems = pgTable(
+  'catalog_items',
+  {
+    id: serial('id').primaryKey(),
+    code: varchar('code', { length: 64 }).notNull(),
+    article: varchar('article', { length: 64 }),
+    name: text('name').notNull(),
+    category: text('category'),
+
+    /** Накопленные факты продаж за все загруженные периоды. */
+    qtySold: doublePrecision('qty_sold').notNull().default(0),
+    saleSum: bigint('sale_sum', { mode: 'number' }).notNull().default(0),
+    buySum: bigint('buy_sum', { mode: 'number' }).notNull().default(0),
+    monthsSeen: integer('months_seen').notNull().default(0),
+
+    /** Средняя цена отгрузки за единицу. */
+    unitPrice: doublePrecision('unit_price').notNull().default(0),
+    unitCost: doublePrecision('unit_cost').notNull().default(0),
+    markupPct: doublePrecision('markup_pct').notNull().default(0),
+
+    /** Нормализованное наименование — по нему идёт подбор позиций. */
+    searchText: text('search_text').notNull().default(''),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('catalog_items_code_uq').on(t.code),
+    index('catalog_items_name_idx').on(t.name),
+    index('catalog_items_sale_idx').on(t.saleSum),
+  ],
+)
+
+// ---------------------------------------------------------------- КП
+
+export const quoteStatus = pgEnum('quote_status', ['draft', 'sent', 'won', 'lost'])
+
+/**
+ * Коммерческое предложение по списку позиций от клиента.
+ * Ключевой артефакт стадии «Аудит цен»: клиент присылает, что закупает,
+ * мы отвечаем ценами по своему прайсу.
+ */
+export const quotes = pgTable(
+  'quotes',
+  {
+    id: serial('id').primaryKey(),
+    clientId: integer('client_id')
+      .notNull()
+      .references(() => clients.id),
+    campaignClientId: integer('campaign_client_id').references(() => campaignClients.id),
+
+    status: quoteStatus('status').notNull().default('draft'),
+    /** Исходный текст от клиента — чтобы можно было пересобрать подбор. */
+    rawInput: text('raw_input'),
+    note: text('note'),
+
+    totalSale: bigint('total_sale', { mode: 'number' }).notNull().default(0),
+    totalCost: bigint('total_cost', { mode: 'number' }).notNull().default(0),
+
+    createdBy: integer('created_by').references(() => users.id),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('quotes_client_idx').on(t.clientId, t.createdAt)],
+)
+
+export const quoteItems = pgTable(
+  'quote_items',
+  {
+    id: serial('id').primaryKey(),
+    quoteId: integer('quote_id')
+      .notNull()
+      .references(() => quotes.id),
+
+    lineNo: integer('line_no').notNull(),
+    /** Как позиция была записана клиентом — пригодится при разборе спорных. */
+    rawLine: text('raw_line').notNull(),
+    qty: doublePrecision('qty').notNull().default(1),
+
+    catalogItemId: integer('catalog_item_id').references(() => catalogItems.id),
+    name: text('name').notNull(),
+    unitPrice: doublePrecision('unit_price').notNull().default(0),
+    unitCost: doublePrecision('unit_cost').notNull().default(0),
+
+    /** Насколько уверенно подобралось: ниже порога менеджер проверяет руками. */
+    confidence: integer('confidence').notNull().default(0),
+    isManual: boolean('is_manual').notNull().default(false),
+  },
+  (t) => [index('quote_items_quote_idx').on(t.quoteId, t.lineNo)],
 )
 
 // ---------------------------------------------------------------- импорт
