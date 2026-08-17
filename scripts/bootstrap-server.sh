@@ -51,8 +51,11 @@ JSON
   echo "прописаны, docker перезапущен"
 fi
 
-# Проверяем, что образы теперь тянутся — иначе дальше всё равно упадёт
-if ! timeout 90 docker pull postgres:17-alpine >/dev/null 2>&1; then
+# Проверяем доступность реестра только если образа ещё нет: при повторном
+# запуске он уже на диске, и требовать скачивания заново незачем.
+if docker image inspect postgres:17-alpine >/dev/null 2>&1; then
+  echo "образ postgres уже на диске"
+elif ! timeout 120 docker pull postgres:17-alpine >/dev/null 2>&1; then
   cat >&2 <<'ERR'
 
 Не удалось скачать образ ни через одно из зеркал.
@@ -64,8 +67,9 @@ if ! timeout 90 docker pull postgres:17-alpine >/dev/null 2>&1; then
 
 ERR
   exit 1
+else
+  echo "образ скачан"
 fi
-echo "образы скачиваются"
 
 # ---------------------------------------------------------------- 1.5 swap
 # Сборка Next.js — самая тяжёлая операция. На 2 ГБ без swap она падает по памяти.
