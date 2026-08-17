@@ -8,7 +8,9 @@
 set -euo pipefail
 
 DOMAIN="${1:-}"
-APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Обычно каталог вычисляется по пути самого скрипта, но i.sh запускает
+# его временную копию — тогда каталог приходит переменной окружения.
+APP_DIR="${APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 if [[ -z "$DOMAIN" ]]; then
   echo "Укажите домен: sudo bash scripts/bootstrap-server.sh crm.вашдомен.ru" >&2
