@@ -1,9 +1,4 @@
-# Скрипты для сервера всегда с Unix-переводами строк,
-# иначе bash на Linux не сможет их выполнить после клонирования с Windows.
+# Скрипты пишутся в Windows, а выполняются на сервере. С переводами строк
+# Windows bash их не запускает: ошибка вида «\r: command not found».
+# Поэтому в репозитории и при выгрузке они всегда с переводами строк Unix.
 *.sh text eol=lf
-Dockerfile text eol=lf
-docker-compose.yml text eol=lf
-*.ts text
-*.tsx text
-*.json text
-*.md text
