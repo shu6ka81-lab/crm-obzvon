@@ -17,8 +17,18 @@ set -euo pipefail
 LOG=/var/log/cloudflared-quick.log
 UNIT=/etc/systemd/system/crm-tunnel.service
 
+# Ссылку ищем и в файле журнала, и в системном: cloudflared в разных версиях
+# печатает её по-разному, а полагаться на одно место — значит ждать впустую.
+#
+# Хвост `|| true` обязателен. Пока ссылки нет, grep возвращает неуспех, при
+# pipefail он становится результатом всей функции, и set -e молча обрывает
+# скрипт на первом же круге ожидания — ровно это здесь и произошло.
 show_url() {
-  grep -oh 'https://[a-z0-9-]\+\.trycloudflare\.com' "$LOG" 2>/dev/null | tail -1
+  {
+    grep -oh 'https://[a-z0-9-]\+\.trycloudflare\.com' "$LOG" 2>/dev/null || true
+    journalctl -u crm-tunnel --no-pager -n 200 2>/dev/null \
+      | grep -oh 'https://[a-z0-9-]\+\.trycloudflare\.com' || true
+  } | tail -1
 }
 
 case "${1:-}" in
@@ -97,8 +107,13 @@ for i in $(seq 1 40); do
 done
 
 if [[ -z "$URL" ]]; then
-  echo "ссылка не появилась за 80 секунд. Журнал:" >&2
-  tail -30 "$LOG" >&2
+  echo "ссылка не появилась за 80 секунд." >&2
+  echo "--- состояние службы ---" >&2
+  systemctl status crm-tunnel --no-pager -n 5 >&2 || true
+  echo "--- журнал службы ---" >&2
+  journalctl -u crm-tunnel --no-pager -n 40 >&2 || true
+  echo "--- файл журнала ---" >&2
+  tail -40 "$LOG" >&2 || true
   exit 1
 fi
 
