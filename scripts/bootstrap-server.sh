@@ -19,6 +19,31 @@ fi
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 
+# ---------------------------------------------------------------- 0. DNS
+# На свежих машинах хостера локальный резолвер иногда не отвечает: запросы
+# к 127.0.0.53 истекают по таймауту. Тогда молча ломается всё сразу —
+# apt, git, docker и выпуск сертификата, причём каждый раз по-разному.
+say "Разрешение имён"
+if getent hosts acme-v02.api.letsencrypt.org >/dev/null 2>&1; then
+  echo "работает"
+else
+  echo "не отвечает — прописываю публичные серверы имён"
+  mkdir -p /etc/systemd/resolved.conf.d
+  cat > /etc/systemd/resolved.conf.d/dns.conf <<'DNSCONF'
+[Resolve]
+DNS=77.88.8.8 8.8.8.8
+FallbackDNS=1.1.1.1 9.9.9.9
+DNSCONF
+  systemctl restart systemd-resolved 2>/dev/null || true
+  resolvectl flush-caches 2>/dev/null || true
+  sleep 2
+  if getent hosts acme-v02.api.letsencrypt.org >/dev/null 2>&1; then
+    echo "починено"
+  else
+    echo "имена по-прежнему не разрешаются — установка, скорее всего, упадёт" >&2
+  fi
+fi
+
 # ---------------------------------------------------------------- 1. Docker
 say "Docker"
 if ! command -v docker >/dev/null 2>&1; then
