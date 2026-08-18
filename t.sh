@@ -20,14 +20,19 @@ UNIT=/etc/systemd/system/crm-tunnel.service
 # Ссылку ищем и в файле журнала, и в системном: cloudflared в разных версиях
 # печатает её по-разному, а полагаться на одно место — значит ждать впустую.
 #
+# Имя обязательно из нескольких слов через дефис. В журнале мелькает ещё и
+# api.trycloudflare.com — служебный адрес, куда туннель ходит за регистрацией.
+# Выражение пошире его подхватывало, и скрипт радостно выдавал не ту ссылку.
+#
 # Хвост `|| true` обязателен. Пока ссылки нет, grep возвращает неуспех, при
 # pipefail он становится результатом всей функции, и set -e молча обрывает
-# скрипт на первом же круге ожидания — ровно это здесь и произошло.
+# скрипт на первом же круге ожидания.
+URL_RE='https://[a-z0-9]\+\(-[a-z0-9]\+\)\{2,\}\.trycloudflare\.com'
 show_url() {
   {
-    grep -oh 'https://[a-z0-9-]\+\.trycloudflare\.com' "$LOG" 2>/dev/null || true
-    journalctl -u crm-tunnel --no-pager -n 200 2>/dev/null \
-      | grep -oh 'https://[a-z0-9-]\+\.trycloudflare\.com' || true
+    grep -oh "$URL_RE" "$LOG" 2>/dev/null || true
+    journalctl -u crm-tunnel --no-pager -n 300 2>/dev/null \
+      | grep -oh "$URL_RE" || true
   } | tail -1
 }
 
