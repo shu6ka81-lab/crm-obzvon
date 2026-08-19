@@ -26,12 +26,13 @@ async function main() {
   const before = await page.locator('tbody tr').count()
   console.log(`загрузок в истории до: ${before}`)
 
-  await page.setInputFiles('input[type=file]', FILE)
+  await page.setInputFiles('input[name=file]', FILE)
   console.log('файл выбран, загружаю…')
 
   const t0 = Date.now()
-  // Именно кнопка формы загрузки: в шапке есть форма выхода, её кнопка идёт раньше
-  await page.click('form:has(input[type=file]) button[type=submit]')
+  // Именно форма клиентской базы. В шапке есть форма выхода, а ниже на странице
+  // ещё две формы загрузки — прайс-лист и конкуренты. Отличаем по имени поля.
+  await page.click('form:has(input[name=file]) button[type=submit]')
   // Ждём, пока в истории появится новая строка — это и есть признак,
   // что серверное действие отработало до конца.
   await page

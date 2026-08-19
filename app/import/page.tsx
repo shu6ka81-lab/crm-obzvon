@@ -5,6 +5,9 @@ import { importBatches } from '@/lib/db/schema'
 import { importActivityReport } from '@/lib/import/importClients'
 import { syncCampaigns } from '@/lib/import/buildCampaigns'
 import { dateRu, dateTimeRu, num } from '@/lib/format'
+import { UploadButton } from './UploadButton'
+import { UploadForm } from './UploadForm'
+import { uploadCatalog, uploadCompetitors } from './actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,14 +59,23 @@ export default async function ImportPage() {
             required
             className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-700"
           />
-          <button
-            type="submit"
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-          >
-            Загрузить
-          </button>
+          <UploadButton />
         </div>
       </form>
+
+      <UploadForm
+        action={uploadCatalog}
+        title="Прайс-лист"
+        hint="Отчёты «Продажи товаров по номенклатуре», по одному на месяц — можно выбрать сразу несколько. Цены берутся фактические, из отгрузок, а не из справочника. Периоды складываются: чем больше месяцев загружено, тем меньше разовая распродажа перекашивает среднюю цену. Без прайс-листа не работает подбор позиций и сборка КП."
+        multiple
+      />
+
+      <UploadForm
+        action={uploadCompetitors}
+        title="Покупатели конкурентов"
+        hint="Списки покупателей из книг продаж — те, кто закупается у других поставщиков. Компании, совпавшие с нашими клиентами из 1С, помечаются отдельно: звонить им как новым нельзя."
+        multiple
+      />
 
       <div>
         <h2 className="mb-2 text-sm font-semibold">История загрузок</h2>
