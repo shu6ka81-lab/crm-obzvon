@@ -10,8 +10,8 @@
 import { chromium } from 'playwright'
 
 const BASE = process.argv[2] ?? 'http://localhost:3000'
-const LOGIN = 'denis'
-const PASSWORD = 'OfisSluzhba2026!'
+const LOGIN = process.argv[3] ?? 'denis'
+const PASSWORD = process.argv[4] ?? 'OfisSluzhba2026!'
 
 const REQUEST = `Бумага А4 500 листов — 20 пачек
 Бумажные полотенца 2 слоя 10
@@ -24,7 +24,7 @@ function num(s: string): number {
 
 async function main() {
   const browser = await chromium.launch()
-  const page = await browser.newPage({ viewport: { width: 1700, height: 1100 } })
+  const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1700, height: 1100 } })
 
   await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' })
   await page.fill('input[name=login]', LOGIN)

@@ -12,7 +12,7 @@ const PASSWORD = 'OfisSluzhba2026!'
 
 async function main() {
   const browser = await chromium.launch()
-  const page = await browser.newPage({ viewport: { width: 1700, height: 1100 } })
+  const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1700, height: 1100 } })
   // Пересборка спрашивает подтверждение — отвечаем «да», как человек
   page.on('dialog', (d) => d.accept())
 

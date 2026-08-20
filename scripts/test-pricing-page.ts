@@ -10,12 +10,12 @@
 import { chromium } from 'playwright'
 
 const BASE = process.argv[2] ?? 'http://localhost:3000'
-const LOGIN = 'denis'
-const PASSWORD = 'OfisSluzhba2026!'
+const LOGIN = process.argv[3] ?? 'denis'
+const PASSWORD = process.argv[4] ?? 'OfisSluzhba2026!'
 
 async function main() {
   const browser = await chromium.launch()
-  const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } })
+  const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1600, height: 1000 } })
 
   await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' })
   await page.fill('input[name=login]', LOGIN)

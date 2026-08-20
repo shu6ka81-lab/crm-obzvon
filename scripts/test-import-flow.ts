@@ -14,7 +14,7 @@ const PASSWORD = 'OfisSluzhba2026!'
 
 async function main() {
   const browser = await chromium.launch()
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 } })
 
   await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' })
   await page.fill('input[name=login]', LOGIN)

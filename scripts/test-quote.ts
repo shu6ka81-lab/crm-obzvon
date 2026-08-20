@@ -19,7 +19,7 @@ const LIST = `Бумага А4 500 листов — 20 пачек
 
 async function main() {
   const browser = await chromium.launch()
-  const page = await browser.newPage({ viewport: { width: 1500, height: 1100 } })
+  const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1500, height: 1100 } })
 
   await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' })
   await page.fill('input[name=login]', 'denis')

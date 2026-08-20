@@ -28,7 +28,7 @@ async function main() {
   console.log(`файлов найдено: ${files.length}`)
 
   const browser = await chromium.launch()
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+  const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 1000 } })
 
   await page.goto(`${BASE}/login`, { waitUntil: 'networkidle' })
   await page.fill('input[name=login]', LOGIN)
