@@ -23,6 +23,7 @@ RUN npx esbuild \
       scripts/migrate.ts \
       scripts/ensure-admin.ts \
       scripts/set-password.ts \
+      scripts/rebuild-campaigns.ts \
     --bundle --platform=node --format=cjs --target=node24 \
     --outdir=dist-scripts \
     --external:@electric-sql/pglite
