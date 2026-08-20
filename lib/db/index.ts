@@ -24,7 +24,20 @@ async function create(): Promise<DB> {
   const { drizzle } = await import('drizzle-orm/pglite')
   const { PGlite } = await import('@electric-sql/pglite')
   const client = new PGlite(process.env.PGLITE_DIR ?? './.pglite')
-  return drizzle(client, { schema })
+  const db = drizzle(client, { schema })
+
+  // В разработке миграции накатываем прямо здесь. PGlite пускает к базе только
+  // один процесс, и пока её держит дев-сервер, отдельный запуск миграций
+  // просто не откроет базу — а без них страница падает на несуществующей
+  // таблице. В проде миграции идут отдельным шагом, до старта приложения:
+  // там это осознанный момент, а не побочный эффект первого запроса.
+  if (process.env.NODE_ENV !== 'production') {
+    const path = await import('node:path')
+    const { migrate } = await import('drizzle-orm/pglite/migrator')
+    await migrate(db, { migrationsFolder: path.join(process.cwd(), 'drizzle') })
+  }
+
+  return db
 }
 
 // Переживает hot reload в dev — иначе на каждый запрос новый инстанс PGlite.

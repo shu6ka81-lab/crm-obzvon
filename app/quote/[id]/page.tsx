@@ -2,8 +2,11 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getQuote } from '../actions'
 import { CONFIDENCE_OK } from '@/lib/quote'
+import { marginPct } from '@/lib/pricing'
 import { getClientById } from '@/lib/queries'
 import { dateTimeRu, money, num } from '@/lib/format'
+import { QuoteLine, type LineView } from './QuoteLines'
+import { GRID } from './grid'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,9 +20,35 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
 
   const { quote, items, author } = data
   const client = await getClientById(quote.clientId)
-  const margin =
-    quote.totalSale > 0 ? ((quote.totalSale - quote.totalCost) / quote.totalSale) * 100 : 0
+
+  const margin = marginPct(quote.totalSale, quote.totalCost)
   const weak = items.filter((i) => i.confidence < CONFIDENCE_OK || i.isManual).length
+  const loss = items.filter((i) => i.unitPrice < i.unitCost).length
+  const edited = items.filter((i) => i.priceEdited).length
+
+  // Сравнение с тем, что клиент платит сейчас — считаем только по тем строкам,
+  // где цена клиента известна, иначе получится сравнение с пустотой.
+  const withClient = items.filter((i) => i.clientPrice != null && i.clientPrice > 0)
+  const clientSum = withClient.reduce((s, i) => s + (i.clientPrice ?? 0) * i.qty, 0)
+  const ourSum = withClient.reduce((s, i) => s + i.unitPrice * i.qty, 0)
+  const saving = clientSum > 0 ? ((clientSum - ourSum) / clientSum) * 100 : null
+
+  const lines: LineView[] = items.map((i) => ({
+    id: i.id,
+    lineNo: i.lineNo,
+    name: i.name,
+    rawLine: i.rawLine,
+    qty: i.qty,
+    unitCost: i.unitCost,
+    unitPrice: i.unitPrice,
+    suggestedPrice: i.suggestedPrice,
+    clientPrice: i.clientPrice,
+    marketPrice: i.marketPrice,
+    confidence: i.confidence,
+    isManual: i.isManual,
+    priceEdited: i.priceEdited,
+    ruleName: i.ruleName,
+  }))
 
   return (
     <div className="space-y-5">
@@ -39,19 +68,51 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
             {author ? ` · ${author}` : ''}
           </p>
         </div>
-        <div className="flex gap-6 text-right">
+
+        <div className="flex flex-wrap gap-6 text-right">
           <div>
             <div className="text-xs text-slate-500">Сумма</div>
-            <div className="text-lg font-semibold tabular-nums">{money(quote.totalSale)}</div>
+            <div data-total className="text-lg font-semibold tabular-nums">
+              {money(quote.totalSale)}
+            </div>
           </div>
           <div>
             <div className="text-xs text-slate-500">Маржа</div>
-            <div className="text-lg font-semibold tabular-nums">{margin.toFixed(0)}%</div>
+            <div
+              className={`text-lg font-semibold tabular-nums ${margin < 10 ? 'text-red-700' : ''}`}
+            >
+              {margin.toFixed(0)}%
+            </div>
             <div className="text-xs text-slate-400">{money(quote.totalSale - quote.totalCost)}</div>
+          </div>
+          {saving != null ? (
+            <div>
+              <div className="text-xs text-slate-500">Против цен клиента</div>
+              <div
+                className={`text-lg font-semibold tabular-nums ${saving > 0 ? 'text-emerald-700' : 'text-red-700'}`}
+              >
+                {saving > 0 ? '−' : '+'}
+                {Math.abs(saving).toFixed(0)}%
+              </div>
+              <div className="text-xs text-slate-400">по {num(withClient.length)} позициям</div>
+            </div>
+          ) : null}
+          <div className="self-center">
+            <a
+              href={`/quote/${quote.id}/pdf`}
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            >
+              Скачать КП
+            </a>
           </div>
         </div>
       </div>
 
+      {loss > 0 ? (
+        <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+          {num(loss)} позиций дешевле закупки — это не низкая маржа, это убыток. Проверьте цену.
+        </p>
+      ) : null}
       {weak > 0 ? (
         <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           {num(weak)} позиций подобраны неуверенно или вписаны руками — проверьте перед отправкой.
@@ -59,52 +120,50 @@ export default async function QuotePage({ params }: { params: Promise<{ id: stri
       ) : null}
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs text-slate-500">
-            <tr>
-              <th className="w-8 px-3 py-2 font-medium">#</th>
-              <th className="px-3 py-2 font-medium">Позиция</th>
-              <th className="px-3 py-2 font-medium">Запрос клиента</th>
-              <th className="w-20 px-3 py-2 text-right font-medium">Кол-во</th>
-              <th className="w-24 px-3 py-2 text-right font-medium">Цена</th>
-              <th className="w-28 px-3 py-2 text-right font-medium">Сумма</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {items.map((it) => (
-              <tr key={it.id} className={it.isManual || it.confidence < CONFIDENCE_OK ? 'bg-amber-50/60' : ''}>
-                <td className="px-3 py-2 text-slate-400">{it.lineNo}</td>
-                <td className="px-3 py-2 font-medium text-slate-900">
-                  {it.name}
-                  {it.isManual ? (
-                    <span className="ml-2 text-xs font-normal text-amber-700">вручную</span>
-                  ) : it.confidence < CONFIDENCE_OK ? (
-                    <span className="ml-2 text-xs font-normal text-amber-700">
-                      совпадение {it.confidence}%
-                    </span>
-                  ) : null}
-                </td>
-                <td className="px-3 py-2 text-xs text-slate-500">{it.rawLine}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{it.qty}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{it.unitPrice}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-medium">
-                  {money(it.unitPrice * it.qty)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot className="bg-slate-50">
-            <tr>
-              <td colSpan={5} className="px-3 py-2 text-right text-sm font-medium">
-                Итого
-              </td>
-              <td className="px-3 py-2 text-right text-base font-semibold tabular-nums">
-                {money(quote.totalSale)}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
+        <div className={`${GRID} border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500`}>
+          <div>#</div>
+          <div>Позиция</div>
+          <div className="text-right">Кол-во</div>
+          <div className="text-right">Закупка</div>
+          <div className="text-right">Наша цена</div>
+          <div className="text-right">Маржа</div>
+          <div className="text-right">У клиента</div>
+          <div className="text-right">Конкурент</div>
+          <div className="text-right">Сумма</div>
+          <div />
+        </div>
+
+        <div className="divide-y divide-slate-100">
+          {lines.map((l) => (
+            <QuoteLine key={l.id} line={l} />
+          ))}
+        </div>
+
+        <div className={`${GRID} border-t border-slate-200 bg-slate-50 px-3 py-2 text-sm`}>
+          <div />
+          <div className="font-medium">Итого</div>
+          <div />
+          <div className="text-right tabular-nums text-slate-400">{money(quote.totalCost)}</div>
+          <div />
+          <div className={`text-right tabular-nums ${margin < 10 ? 'text-red-700' : 'text-slate-500'}`}>
+            {margin.toFixed(0)}%
+          </div>
+          <div className="text-right tabular-nums text-slate-400">
+            {clientSum > 0 ? money(clientSum) : ''}
+          </div>
+          <div />
+          <div className="text-right text-base font-semibold tabular-nums">
+            {money(quote.totalSale)}
+          </div>
+          <div />
+        </div>
       </div>
+
+      <p className="text-xs text-slate-400">
+        Цена посчитана от закупки по <Link href="/pricing" className="underline hover:text-slate-700">правилам наценки</Link>.
+        Правленая руками цена помечается рамкой и при пересчёте не затирается.
+        {edited > 0 ? ` Сейчас правлено вручную: ${num(edited)}.` : ''}
+      </p>
     </div>
   )
 }

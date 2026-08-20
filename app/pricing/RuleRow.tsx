@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react'
 import { deleteRule, saveRule, type RuleState } from './actions'
+import { GRID } from './grid'
 
 export interface RuleView {
   id: number
@@ -19,9 +20,6 @@ export interface RuleView {
 
 const field =
   'rounded border border-slate-200 bg-white px-2 py-1 text-sm outline-none focus:border-slate-500'
-
-/** Ширины колонок держим в одном месте — шапка и строки не разъедутся. */
-export const GRID = 'grid grid-cols-[1fr_1fr_4rem_5rem_5rem_5rem_4rem_3rem_auto] items-center gap-2'
 
 export function RuleRow({ rule, categories }: { rule: RuleView; categories: string[] }) {
   const [state, action, pending] = useActionState<RuleState | null, FormData>(saveRule, null)

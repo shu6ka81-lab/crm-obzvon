@@ -5,7 +5,7 @@ import { cookies } from 'next/headers'
 import { asc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDb } from '@/lib/db'
-import { quoteItems, quotes, users } from '@/lib/db/schema'
+import { pricingRules, quoteItems, quotes, users } from '@/lib/db/schema'
 import { getCatalogIndex } from '@/lib/catalog'
 import { parseRequestLines } from '@/lib/catalog/match'
 import { SESSION_COOKIE, verifySession } from '@/lib/auth/session'
@@ -131,6 +131,33 @@ export async function saveQuote(input: unknown) {
   return { ok: true as const, quoteId: quote.id }
 }
 
+export interface LineState {
+  ok: boolean
+  message: string
+}
+
+/**
+ * Тот же приём, что и в остальных формах: пустое поле приходит пустой строкой,
+ * а необязательное число её не принимает — и правка молча пропадает.
+ * Пустая строка здесь значит «очистить», поэтому превращаем её в null.
+ */
+export async function editQuoteItem(
+  _prev: LineState | null,
+  formData: FormData,
+): Promise<LineState> {
+  const raw: Record<string, unknown> = {}
+  for (const [k, v] of formData.entries()) {
+    if (typeof v !== 'string') continue
+    if (k === 'clientPrice' || k === 'marketPrice') raw[k] = v.trim() === '' ? null : v
+    else if (v.trim() !== '') raw[k] = v
+  }
+
+  const res = await updateQuoteItem(raw)
+  return res.ok
+    ? { ok: true, message: 'Сохранено' }
+    : { ok: false, message: res.error ?? 'Не сохранилось' }
+}
+
 const EditItemSchema = z.object({
   itemId: z.coerce.number().int().positive(),
   qty: z.coerce.number().positive().optional(),
@@ -201,11 +228,13 @@ export async function getQuote(quoteId: number) {
   const [quote] = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1)
   if (!quote) return null
 
-  const items = await db
-    .select()
+  const rows = await db
+    .select({ item: quoteItems, ruleName: pricingRules.name })
     .from(quoteItems)
+    .leftJoin(pricingRules, eq(pricingRules.id, quoteItems.ruleId))
     .where(eq(quoteItems.quoteId, quoteId))
     .orderBy(asc(quoteItems.lineNo))
+  const items = rows.map((r) => ({ ...r.item, ruleName: r.ruleName }))
 
   const [author] = quote.createdBy
     ? await db.select({ name: users.name }).from(users).where(eq(users.id, quote.createdBy))

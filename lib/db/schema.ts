@@ -358,6 +358,16 @@ export const quoteStatus = pgEnum('quote_status', ['draft', 'sent', 'won', 'lost
  * мы отвечаем ценами по своему прайсу.
  */
 /**
+ * Настройки одной строкой на ключ. Отдельная таблица под каждую мелочь
+ * не окупается, а реквизиты для КП где-то хранить надо.
+ */
+export const settings = pgTable('settings', {
+  key: varchar('key', { length: 64 }).primaryKey(),
+  value: text('value').notNull().default(''),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+/**
  * Правила наценки. Цена в КП считается от закупки, а не берётся из прошлых
  * отгрузок: средняя по истории тянет за собой все разовые скидки и распродажи.
  *

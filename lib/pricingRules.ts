@@ -41,16 +41,20 @@ export interface SeedResult {
  * и при этом весома по деньгам. Всё остальное покрывает общее правило.
  */
 export async function seedDefaultRules(opts?: {
-  minRevenue?: number
+  /** Доля от всех продаж, ниже которой категория не заслуживает своего правила. */
+  minShare?: number
   minDeviation?: number
-  alwaysAbove?: number
+  /** Доля, выше которой правило заводим всегда — там ошибка дороже. */
+  alwaysAboveShare?: number
   force?: boolean
 }): Promise<SeedResult> {
   const db = await getDb()
-  const minRevenue = opts?.minRevenue ?? 5_000_000
+  // Пороги — доли от оборота, а не рубли. С рублёвыми порогами набор правил
+  // зависел от того, сколько месяцев прайса успели загрузить: за семь месяцев
+  // категория проходила отбор, за три — уже нет.
+  const minShare = opts?.minShare ?? 0.01
   const minDeviation = opts?.minDeviation ?? 5
-  /** Где денег много, правило заводим всегда — там ошибка дороже. */
-  const alwaysAbove = opts?.alwaysAbove ?? 20_000_000
+  const alwaysAboveShare = opts?.alwaysAboveShare ?? 0.04
 
   const [{ n }] = await db
     .select({ n: sql<number>`count(*)::int` })
@@ -70,6 +74,10 @@ export async function seedDefaultRules(opts?: {
     Number(tot.buy) > 0
       ? Math.round(((Number(tot.sale) - Number(tot.buy)) / Number(tot.buy)) * 100)
       : 40
+
+  const totalSale = Number(tot.sale)
+  const minRevenue = totalSale * minShare
+  const alwaysAbove = totalSale * alwaysAboveShare
 
   const cats = await db
     .select({

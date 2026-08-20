@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react'
 import { saveRule, type RuleState } from './actions'
-import { GRID } from './RuleRow'
+import { GRID } from './grid'
 
 const field =
   'rounded border border-slate-200 bg-white px-2 py-1 text-sm outline-none focus:border-slate-500'

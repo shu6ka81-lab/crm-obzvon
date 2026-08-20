@@ -2,8 +2,10 @@ import { asc, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
 import { catalogItems, pricingRules } from '@/lib/db/schema'
 import { num } from '@/lib/format'
-import { GRID, RuleRow, type RuleView } from './RuleRow'
+import { RuleRow, type RuleView } from './RuleRow'
+import { GRID } from './grid'
 import { NewRule } from './NewRule'
+import { RebuildButton } from './RebuildButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -115,6 +117,8 @@ export default async function PricingPage() {
 
         <NewRule categories={categories} baseMarkup={Math.round(general?.markupPct ?? 40)} />
       </div>
+
+      <RebuildButton hasRules={rules.length > 0} />
 
       <p className="text-xs text-slate-400">
         Правила выведены из фактических отгрузок компании: у каждой крупной категории своя наценка,

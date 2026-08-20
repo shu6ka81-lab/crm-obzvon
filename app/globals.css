@@ -24,3 +24,41 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/*
+ * Печать коммерческого предложения. На бумагу уходит только сам документ:
+ * шапка с меню, кнопки и подсказки скрываются. Отступы страницы задаются
+ * здесь же, иначе браузер ставит свои и подпись уезжает на второй лист.
+ */
+@page {
+  size: A4;
+  margin: 14mm 12mm;
+}
+
+@media print {
+  header,
+  .no-print {
+    display: none !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  .print-sheet {
+    box-shadow: none !important;
+    border: 0 !important;
+    padding: 0 !important;
+  }
+  table {
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+}
