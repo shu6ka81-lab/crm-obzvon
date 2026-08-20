@@ -357,6 +357,39 @@ export const quoteStatus = pgEnum('quote_status', ['draft', 'sent', 'won', 'lost
  * Ключевой артефакт стадии «Аудит цен»: клиент присылает, что закупает,
  * мы отвечаем ценами по своему прайсу.
  */
+/**
+ * Правила наценки. Цена в КП считается от закупки, а не берётся из прошлых
+ * отгрузок: средняя по истории тянет за собой все разовые скидки и распродажи.
+ *
+ * Наценка у них не одинаковая, и это осознанно. По их же данным: бумага для
+ * принтера — 21% при 72 млн выручки, файлы-вкладыши — 71%, папки-регистраторы —
+ * 67%, средняя по компании 43%. Бумагой торгуют все, на ней держат цену и берут
+ * объёмом; на мелочи, которую докладывают в тот же заказ, зарабатывают.
+ *
+ * Правила проверяются по возрастанию priority, срабатывает первое подходящее.
+ */
+export const pricingRules = pgTable(
+  'pricing_rules',
+  {
+    id: serial('id').primaryKey(),
+    name: text('name').notNull(),
+
+    /** Совпадение по категории прайса, без учёта регистра. Пусто — любая. */
+    categoryPattern: text('category_pattern'),
+    /** Границы цены закупки за единицу. Пусто — без ограничения. */
+    minCost: doublePrecision('min_cost'),
+    maxCost: doublePrecision('max_cost'),
+
+    markupPct: doublePrecision('markup_pct').notNull(),
+    priority: integer('priority').notNull().default(100),
+    isActive: boolean('is_active').notNull().default(true),
+    note: text('note'),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('pricing_rules_priority_idx').on(t.priority)],
+)
+
 export const quotes = pgTable(
   'quotes',
   {
@@ -399,9 +432,19 @@ export const quoteItems = pgTable(
     unitPrice: doublePrecision('unit_price').notNull().default(0),
     unitCost: doublePrecision('unit_cost').notNull().default(0),
 
+    /** Цена, посчитанная правилом наценки, до правок руками. */
+    suggestedPrice: doublePrecision('suggested_price'),
+    ruleId: integer('rule_id').references(() => pricingRules.id),
+    /** Цена, которую клиент назвал в разговоре — почём берёт сейчас. */
+    clientPrice: doublePrecision('client_price'),
+    /** Цена у конкурента, для сравнения. */
+    marketPrice: doublePrecision('market_price'),
+
     /** Насколько уверенно подобралось: ниже порога менеджер проверяет руками. */
     confidence: integer('confidence').notNull().default(0),
     isManual: boolean('is_manual').notNull().default(false),
+    /** Цену правили руками — правило её больше не перебивает. */
+    priceEdited: boolean('price_edited').notNull().default(false),
   },
   (t) => [index('quote_items_quote_idx').on(t.quoteId, t.lineNo)],
 )

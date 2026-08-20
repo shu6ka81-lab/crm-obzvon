@@ -17,6 +17,7 @@ const NAV = [
   { href: '/', label: 'Кампании' },
   { href: '/tasks', label: 'Задачи' },
   { href: '/clients', label: 'Клиенты' },
+  { href: '/pricing', label: 'Наценка' },
   { href: '/import', label: 'Импорт' },
 ]
 

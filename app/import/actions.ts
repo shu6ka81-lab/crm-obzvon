@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { importCatalogReport } from '@/lib/import/importCatalog'
 import { importCompetitorReport } from '@/lib/import/importCompetitor'
+import { seedDefaultRules } from '@/lib/pricingRules'
 import { num } from '@/lib/format'
 
 export interface UploadState {
@@ -53,12 +54,25 @@ export async function uploadCatalog(
     }
   }
 
+  // Правила наценки выводим из тех же продаж — но только если их ещё нет,
+  // чтобы повторная загрузка не затирала то, что менеджеры уже поправили.
+  let ruleLine = ''
+  if (lines.length > 0) {
+    const seeded = await seedDefaultRules()
+    if (!seeded.skipped) {
+      ruleLine =
+        `, заведено правил наценки ${seeded.created} ` +
+        `(общая ${seeded.base}%, своих категорий ${seeded.categories.length})`
+    }
+  }
+
   revalidatePath('/import')
+  revalidatePath('/pricing')
   return {
     ok: lines.length > 0,
     headline:
       lines.length > 0
-        ? `Загружено отчётов: ${lines.length}, позиций всего ${num(rows)}`
+        ? `Загружено отчётов: ${lines.length}, позиций всего ${num(rows)}${ruleLine}`
         : 'Ни один файл не разобрался',
     lines,
     warnings,

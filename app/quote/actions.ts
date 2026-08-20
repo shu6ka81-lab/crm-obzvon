@@ -9,6 +9,8 @@ import { quoteItems, quotes, users } from '@/lib/db/schema'
 import { getCatalogIndex } from '@/lib/catalog'
 import { parseRequestLines } from '@/lib/catalog/match'
 import { SESSION_COOKIE, verifySession } from '@/lib/auth/session'
+import { getPricingRules } from '@/lib/pricingRules'
+import { priceFor, roundPrice } from '@/lib/pricing'
 import type { MatchedLine } from '@/lib/quote'
 
 
@@ -19,22 +21,37 @@ async function currentUserId(): Promise<number | null> {
   return session?.userId ?? null
 }
 
-/** Подбор без сохранения — чтобы менеджер сначала посмотрел, что нашлось. */
+/**
+ * Подбор без сохранения — чтобы менеджер сначала посмотрел, что нашлось.
+ *
+ * Цена считается от закупки по правилам наценки, а не берётся средней из
+ * прошлых отгрузок: средняя тянет за собой все разовые скидки и распродажи.
+ * Историческую цену возвращаем рядом — по расхождению видно, где раньше
+ * продавали не так, как собирались.
+ */
 export async function matchRequest(text: string): Promise<MatchedLine[]> {
-  const index = await getCatalogIndex()
+  const [index, rules] = await Promise.all([getCatalogIndex(), getPricingRules()])
+
   return parseRequestLines(text).map((line, i) => ({
     lineNo: i + 1,
     raw: line.raw,
     qty: line.qty,
-    options: index.search(line.name, 5).map((m) => ({
-      id: m.item.id,
-      code: m.item.code,
-      name: m.item.name,
-      unitPrice: Math.round(m.item.unitPrice * 100) / 100,
-      unitCost: Math.round(m.item.unitCost * 100) / 100,
-      markupPct: Math.round(m.item.markupPct),
-      confidence: m.confidence,
-    })),
+    options: index.search(line.name, 5).map((m) => {
+      const p = priceFor(rules, m.item)
+      return {
+        id: m.item.id,
+        code: m.item.code,
+        name: m.item.name,
+        unitPrice: p.price,
+        unitCost: roundPrice(m.item.unitCost),
+        markupPct: Math.round(p.fallback ? m.item.markupPct : p.markupPct),
+        confidence: m.confidence,
+        category: m.item.category,
+        ruleId: p.rule?.id ?? null,
+        ruleName: p.rule?.name ?? null,
+        historicPrice: roundPrice(m.item.unitPrice),
+      }
+    }),
   }))
 }
 
@@ -53,6 +70,11 @@ const SaveSchema = z.object({
         name: z.string().min(1),
         unitPrice: z.number().min(0),
         unitCost: z.number().min(0),
+        suggestedPrice: z.number().min(0).nullable().optional(),
+        ruleId: z.number().int().positive().nullable().optional(),
+        clientPrice: z.number().min(0).nullable().optional(),
+        marketPrice: z.number().min(0).nullable().optional(),
+        priceEdited: z.boolean().optional(),
         confidence: z.number().int().min(0).max(100),
         isManual: z.boolean(),
       }),
@@ -95,6 +117,11 @@ export async function saveQuote(input: unknown) {
       name: it.name,
       unitPrice: it.unitPrice,
       unitCost: it.unitCost,
+      suggestedPrice: it.suggestedPrice ?? it.unitPrice,
+      ruleId: it.ruleId ?? null,
+      clientPrice: it.clientPrice ?? null,
+      marketPrice: it.marketPrice ?? null,
+      priceEdited: it.priceEdited ?? false,
       confidence: it.confidence,
       isManual: it.isManual,
     })),
@@ -102,6 +129,71 @@ export async function saveQuote(input: unknown) {
 
   revalidatePath('/')
   return { ok: true as const, quoteId: quote.id }
+}
+
+const EditItemSchema = z.object({
+  itemId: z.coerce.number().int().positive(),
+  qty: z.coerce.number().positive().optional(),
+  unitPrice: z.coerce.number().min(0).optional(),
+  clientPrice: z.coerce.number().min(0).nullable().optional(),
+  marketPrice: z.coerce.number().min(0).nullable().optional(),
+})
+
+/**
+ * Правка строки в уже сохранённом КП.
+ *
+ * Правило наценки даёт отправную цену, но последнее слово за менеджером:
+ * он знает про объём, историю и то, что клиент назвал по телефону. Поэтому
+ * правленую цену помечаем — чтобы пересчёт по правилам её не затирал.
+ */
+export async function updateQuoteItem(input: unknown) {
+  const parsed = EditItemSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? 'Некорректные данные' }
+  }
+  const d = parsed.data
+  const db = await getDb()
+
+  const [item] = await db
+    .select()
+    .from(quoteItems)
+    .where(eq(quoteItems.id, d.itemId))
+    .limit(1)
+  if (!item) return { ok: false as const, error: 'Строка не найдена' }
+
+  const priceChanged = d.unitPrice != null && d.unitPrice !== item.unitPrice
+
+  await db
+    .update(quoteItems)
+    .set({
+      qty: d.qty ?? item.qty,
+      unitPrice: d.unitPrice ?? item.unitPrice,
+      clientPrice: d.clientPrice === undefined ? item.clientPrice : d.clientPrice,
+      marketPrice: d.marketPrice === undefined ? item.marketPrice : d.marketPrice,
+      priceEdited: item.priceEdited || priceChanged,
+    })
+    .where(eq(quoteItems.id, d.itemId))
+
+  await recalcQuote(item.quoteId)
+  revalidatePath(`/quote/${item.quoteId}`)
+  return { ok: true as const }
+}
+
+/** Итоги КП всегда считаются из строк — хранить их отдельно и не сверять нельзя. */
+async function recalcQuote(quoteId: number) {
+  const db = await getDb()
+  const rows = await db
+    .select({ qty: quoteItems.qty, price: quoteItems.unitPrice, cost: quoteItems.unitCost })
+    .from(quoteItems)
+    .where(eq(quoteItems.quoteId, quoteId))
+
+  const totalSale = rows.reduce((s, r) => s + r.price * r.qty, 0)
+  const totalCost = rows.reduce((s, r) => s + r.cost * r.qty, 0)
+
+  await db
+    .update(quotes)
+    .set({ totalSale: Math.round(totalSale), totalCost: Math.round(totalCost) })
+    .where(eq(quotes.id, quoteId))
 }
 
 export async function getQuote(quoteId: number) {

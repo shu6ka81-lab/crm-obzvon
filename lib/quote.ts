@@ -8,10 +8,16 @@ export interface MatchedOption {
   id: number
   code: string
   name: string
+  /** Цена по правилам наценки — она и попадает в КП. */
   unitPrice: number
   unitCost: number
   markupPct: number
   confidence: number
+  category: string | null
+  ruleId: number | null
+  ruleName: string | null
+  /** Средняя цена прошлых отгрузок. Показываем рядом, чтобы видеть расхождение. */
+  historicPrice: number
 }
 
 export interface MatchedLine {
