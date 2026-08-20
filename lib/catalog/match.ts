@@ -10,6 +10,8 @@
  * именно ими различаются соседние позиции одной линейки.
  */
 
+import { stem, stems } from './stem'
+
 export interface MatchCandidate {
   id: number
   code: string
@@ -74,6 +76,7 @@ export function translit(s: string): string {
 }
 
 const LATIN_RE = /[a-z]/i
+const CYR_RE = /^[а-яё]+$/i
 
 /** Расстояние Левенштейна с ранним выходом — дальше порога считать незачем. */
 function editDistance(a: string, b: string, max: number): number {
@@ -128,15 +131,22 @@ export function measures(s: string): string[] {
  * перебирать 80 тысяч позиций на каждую строку запроса слишком дорого.
  */
 export class CatalogIndex {
-  private byToken = new Map<string, number[]>()
+  /** Поиск идёт по основам слов: «карандаши» из запроса и «карандаш» в прайсе
+   *  должны попадать в одну ячейку, иначе слово просто выпадает из поиска. */
+  private byStem = new Map<string, number[]>()
   private idf = new Map<string, number>()
   private items: MatchCandidate[] = []
+  private itemStems: Set<string>[] = []
   private itemTokens: string[][] = []
   private itemMeasures: string[][] = []
 
   /** Кириллическое звучание латинских слов → сами слова: Гринфилд → greenfield. */
   private byTranslit = new Map<string, Set<string>>()
-  private vocab: string[] = []
+  private translitVocab: string[] = []
+  /** Основы кириллических слов — по ним ищем опечатки. */
+  private stemVocab: string[] = []
+  /** Вес слова, которого в прайсе нет: реже него не встречается ничто. */
+  private maxIdf = 0
 
   constructor(items: MatchCandidate[]) {
     this.items = items
@@ -144,16 +154,21 @@ export class CatalogIndex {
 
     items.forEach((item, i) => {
       const toks = tokenize(item.searchText || item.name)
-      const uniq = [...new Set(toks)]
       this.itemTokens.push(toks)
       this.itemMeasures.push(measures(item.name))
 
-      for (const t of uniq) {
-        let list = this.byToken.get(t)
-        if (!list) this.byToken.set(t, (list = []))
-        list.push(i)
-        df.set(t, (df.get(t) ?? 0) + 1)
+      const st = new Set<string>()
+      for (const t of toks) for (const s of stems(t)) st.add(s)
+      this.itemStems.push(st)
 
+      for (const s of st) {
+        let list = this.byStem.get(s)
+        if (!list) this.byStem.set(s, (list = []))
+        list.push(i)
+        df.set(s, (df.get(s) ?? 0) + 1)
+      }
+
+      for (const t of new Set(toks)) {
         if (LATIN_RE.test(t)) {
           const key = translit(t)
           let set = this.byTranslit.get(key)
@@ -165,7 +180,9 @@ export class CatalogIndex {
 
     const n = items.length || 1
     for (const [t, c] of df) this.idf.set(t, Math.log(1 + n / c))
-    this.vocab = [...this.byTranslit.keys()]
+    this.maxIdf = Math.log(1 + n)
+    this.translitVocab = [...this.byTranslit.keys()]
+    this.stemVocab = [...this.byStem.keys()].filter((s) => s.length >= 5 && CYR_RE.test(s))
   }
 
   /**
@@ -174,17 +191,29 @@ export class CatalogIndex {
    * Опечатки и разночтения переводят по расстоянию не больше двух.
    */
   private expand(token: string): string[] {
-    if (this.byToken.has(token)) return [token]
-    if (token.length < 4 || LATIN_RE.test(token)) return []
+    // Прямое попадание по основе — обычный случай
+    const direct = stems(token).filter((s) => this.byStem.has(s))
+    if (direct.length) return direct
 
-    const exact = this.byTranslit.get(token)
-    if (exact) return [...exact]
+    if (token.length < 4) return []
 
-    const max = token.length >= 7 ? 2 : 1
+    // Латинский бренд, записанный кириллицей: «гринфилд» → greenfield
+    if (!LATIN_RE.test(token)) {
+      const exact = this.byTranslit.get(token)
+      if (exact) return [...exact].flatMap((t) => stems(t)).filter((s) => this.byStem.has(s))
+    }
+
+    // Опечатка. Ищем ближайшую основу, но только если запас расстояния мал:
+    // на длинных словах две правки уже уводят в другой товар.
+    const base = stem(token)
+    const max = base.length >= 8 ? 2 : 1
+    const vocab = LATIN_RE.test(token) ? [] : [...this.stemVocab, ...this.translitVocab]
+
     let best: string[] = []
     let bestDist = max + 1
-    for (const cand of this.vocab) {
-      const d = editDistance(token, cand, max)
+    for (const cand of vocab) {
+      if (Math.abs(cand.length - base.length) > max) continue
+      const d = editDistance(base, cand, max)
       if (d < bestDist) {
         bestDist = d
         best = [cand]
@@ -193,7 +222,12 @@ export class CatalogIndex {
       }
     }
     if (bestDist > max) return []
-    return best.flatMap((k) => [...(this.byTranslit.get(k) ?? [])])
+
+    return best.flatMap((k) =>
+      this.byStem.has(k)
+        ? [k]
+        : [...(this.byTranslit.get(k) ?? [])].flatMap((t) => stems(t)).filter((s) => this.byStem.has(s)),
+    )
   }
 
   get size(): number {
@@ -207,25 +241,45 @@ export class CatalogIndex {
 
     // Считаем только по позициям, где встретилось хоть одно слово запроса
     const scores = new Map<number, number>()
+    const qStems = new Set<string>()
     let maxPossible = 0
 
     for (const q of new Set(qTokens)) {
+      for (const s of stems(q)) qStems.add(s)
       // Одно слово запроса может отвечать нескольким в каталоге —
       // берём лучшее из них, иначе бренд перевесит всё остальное
       const variants = this.expand(q)
-      if (variants.length === 0) continue
+
+      /*
+       * Слово, которого в прайсе нет вовсе, раньше просто выбрасывалось —
+       * и не попадало в знаменатель. Из-за этого «абонемент в бассейн»
+       * получал 70%: «абонемент» исчезал, «бассейн» совпадал целиком, и
+       * чистящее средство для бассейна выглядело надёжной находкой.
+       *
+       * Теперь такое слово остаётся в знаменателе с весом самого редкого:
+       * отсутствующее в каталоге из 22 тысяч позиций встречается реже всего.
+       * Совпадение честно проседает, и строка помечается «проверьте».
+       */
+      if (variants.length === 0) {
+        maxPossible += this.maxIdf
+        continue
+      }
 
       const weight = Math.max(...variants.map((v) => this.idf.get(v) ?? 0))
       maxPossible += weight
 
       const touched = new Set<number>()
       for (const v of variants) {
-        for (const i of this.byToken.get(v) ?? []) touched.add(i)
+        for (const i of this.byStem.get(v) ?? []) touched.add(i)
       }
       for (const i of touched) scores.set(i, (scores.get(i) ?? 0) + weight)
     }
 
     if (scores.size === 0) return []
+
+    // Основа первого слова запроса — это то, что клиент просит по сути.
+    // «Бумага а4»: важна бумага, а «а4» лишь уточнение.
+    const qHead = new Set(stems(qTokens[0]))
 
     const scored: MatchResult[] = []
     for (const [i, base] of scores) {
@@ -237,15 +291,44 @@ export class CatalogIndex {
         score += hit * (maxPossible * 0.25)
       }
 
+      /*
+       * Главное слово наименования стоит первым: «Бумага Илим…», «Ватман А4…»,
+       * «Лотки для бумаг… А4». Без учёта этого по запросу «бумага а4» первыми
+       * шли лотки: слово «бумаг» в них есть, товар совсем другой.
+       */
+      const head = this.itemTokens[i][0]
+      let headFactor = 0.7
+      if (head) {
+        const headStems = stems(head)
+        if (headStems.some((s) => qHead.has(s))) headFactor = 1
+        else if (headStems.some((s) => qStems.has(s))) headFactor = 0.85
+      }
+      score *= 0.7 + headFactor
+
       // Короткое наименование при равном совпадении вернее длинного:
-      // «Бумага А4 Снегурочка» лучше, чем «Набор бумаги А4 и маркеров»
-      const lenPenalty = 1 / (1 + Math.max(0, this.itemTokens[i].length - qTokens.length) * 0.06)
+      // «Бумага А4 Снегурочка» лучше, чем «Набор бумаги А4 и маркеров».
+      // Штраф мягкий и ограничен: подробное название — не признак ошибки.
+      const extra = Math.max(0, this.itemTokens[i].length - qTokens.length)
+      const lenPenalty = Math.max(0.75, 1 / (1 + extra * 0.04))
       score *= lenPenalty
 
+      /*
+       * Уверенность и оценка считаются по-разному, и это намеренно.
+       *
+       * Оценка ранжирует: в неё входят надбавки за главное слово и за
+       * совпавшие размеры. Уверенность отвечает на другой вопрос — «насколько
+       * это вообще похоже на то, что просили», и складывается из доли
+       * совпавшего запроса и согласия по главному слову.
+       *
+       * Пока они были одним числом, надбавки задирали уверенность до потолка:
+       * все варианты показывали 100%, и предупреждение «проверьте» не срабатывало
+       * никогда — менеджер терял единственную подсказку, где подбор ненадёжен.
+       */
+      const coverage = maxPossible > 0 ? base / maxPossible : 0
       scored.push({
         item: this.items[i],
         score,
-        confidence: maxPossible > 0 ? Math.min(100, Math.round((score / maxPossible) * 100)) : 0,
+        confidence: Math.min(100, Math.round(coverage * headFactor * 100)),
       })
     }
 
