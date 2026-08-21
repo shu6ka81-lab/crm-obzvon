@@ -11,8 +11,18 @@ import { chromium } from 'playwright'
 
 const BASE = process.argv[2] ?? 'http://localhost:3000'
 const TOKEN = process.argv[3] ?? process.env.BOT_TOKEN ?? 'dev-bot-token-local-only'
-const LOGIN = 'denis'
-const PASSWORD = 'OfisSluzhba2026!'
+const LOGIN = process.argv[4] ?? 'denis'
+const PASSWORD = process.argv[5] ?? 'OfisSluzhba2026!'
+
+/*
+ * Пока сертификат на сервере свой, не от общепризнанного центра, обычный
+ * fetch до него не доходит — в отличие от браузера, который спрашивает
+ * человека. Проверку отключаем только здесь и только для адреса по IP:
+ * на домене с настоящим сертификатом это условие само перестанет срабатывать.
+ */
+if (/^https:\/\/\d+\.\d+\.\d+\.\d+/.test(BASE)) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+}
 
 const PHONE = '+7 812 555-33-11'
 const TRANSCRIPT = [
