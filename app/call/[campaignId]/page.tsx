@@ -15,6 +15,7 @@ import {
 import { dateRu, dateTimeRu, daysAgoLabel, money, num } from '@/lib/format'
 import { skipClient } from '@/app/actions'
 import { CallForm } from './CallForm'
+import { Contacts } from '@/app/clients/[code]/Contacts'
 import type { CampaignKind } from '@/lib/funnel'
 
 export const dynamic = 'force-dynamic'
@@ -130,37 +131,33 @@ export default async function CallPage({
       <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
         {/* ---------------- карточка клиента ---------------- */}
         <div className="space-y-4">
-          <div
-            className={`rounded-lg border p-4 ${
-              c.phone ? 'border-slate-200 bg-white' : 'border-red-200 bg-red-50'
-            }`}
-          >
-            <h2 className="mb-2 text-sm font-semibold text-slate-900">Куда звонить</h2>
-            {c.phone ? (
-              <div className="divide-y divide-slate-100">
-                <Row label="Телефон" value={<span className="text-base">{c.phone}</span>} />
-                <Row label="Контактное лицо" value={c.contactPerson ?? '—'} />
-                <Row label="Почта" value={c.email ?? '—'} />
-                <Row label="Адрес" value={c.address ?? '—'} />
-              </div>
-            ) : (
-              <p className="text-sm text-red-900">
-                {c.source === 'competitor' ? (
-                  <>
-                    Телефона нет. В книге продаж контактов не бывает — их нужно найти
-                    по ИНН <span className="font-semibold">{c.inn}</span> через СБИС,
-                    Контур.Фокус или 2ГИС.
-                  </>
-                ) : (
-                  <>
-                    Телефона нет. В отчёте «Активность контрагентов» контактов не бывает —
-                    нужна отдельная выгрузка справочника контрагентов из 1С с телефоном,
-                    контактным лицом и почтой.
-                  </>
-                )}
-              </p>
-            )}
-          </div>
+          {/*
+            Номер вписывается прямо здесь. Раньше блок был только для чтения:
+            менеджер находил телефон в 2ГИС посреди работы, а деть его было
+            некуда — и он оставался в блокноте.
+          */}
+          <Contacts
+            clientId={c.id}
+            phone={c.phone}
+            contactPerson={c.contactPerson}
+            email={c.email}
+            compact
+            hint={
+              c.source === 'competitor' ? (
+                <>
+                  Телефона нет. В книге продаж контактов не бывает — их нужно найти по ИНН{' '}
+                  <span className="font-semibold">{c.inn}</span> через СБИС, Контур.Фокус
+                  или 2ГИС, и вписать сюда.
+                </>
+              ) : (
+                <>
+                  Телефона нет. В отчёте «Активность контрагентов» контактов не бывает —
+                  нужна отдельная выгрузка справочника из 1С. Найденный номер можно вписать
+                  сюда прямо сейчас.
+                </>
+              )
+            }
+          />
 
           {c.source === 'competitor' ? (
             <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4">

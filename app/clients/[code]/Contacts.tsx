@@ -23,11 +23,17 @@ export function Contacts({
   phone,
   contactPerson,
   email,
+  hint,
+  compact = false,
 }: {
   clientId: number
   phone: string | null
   contactPerson: string | null
   email: string | null
+  /** Откуда брать номер, если его нет: у своих и у чужих компаний по-разному. */
+  hint?: React.ReactNode
+  /** На экране обзвона места мало — поля идут столбиком. */
+  compact?: boolean
 }) {
   const [state, action, pending] = useActionState<ContactsState | null, FormData>(
     saveClientContacts,
@@ -47,16 +53,15 @@ export function Contacts({
       <form action={action}>
         <input type="hidden" name="clientId" value={clientId} />
 
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-900">Куда звонить</h2>
-          {!phone ? (
-            <span className="text-xs text-red-800">
-              Телефона нет — найдите в 2ГИС или СБИС и впишите
-            </span>
-          ) : null}
-        </div>
+        <h2 className="mb-2 text-sm font-semibold text-slate-900">Куда звонить</h2>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        {!phone ? (
+          <p className="mb-3 text-sm text-red-900">
+            {hint ?? 'Телефона нет — найдите в 2ГИС или СБИС и впишите сюда.'}
+          </p>
+        ) : null}
+
+        <div className={compact ? 'grid gap-3' : 'grid gap-3 sm:grid-cols-3'}>
           <label>
             <span className="mb-1 block text-xs text-slate-500">Телефон</span>
             <input
