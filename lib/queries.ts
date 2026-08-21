@@ -350,6 +350,11 @@ export async function getTouches(clientId: number) {
       outcome: touches.outcome,
       note: touches.note,
       gotQuoteRequest: touches.gotQuoteRequest,
+      transcript: touches.transcript,
+      recording: touches.recording,
+      botCategory: touches.botCategory,
+      costRub: touches.costRub,
+      durationSec: touches.durationSec,
       userName: users.name,
     })
     .from(touches)

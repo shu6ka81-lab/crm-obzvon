@@ -7,16 +7,9 @@ import { SESSION_COOKIE } from '@/lib/auth/session'
 import { and, asc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDb } from '@/lib/db'
-import { suggestStage } from '@/lib/funnel'
+import { recordTouch } from '@/lib/touch'
 import { listCampaignClients } from '@/lib/queries'
-import {
-  campaignClients,
-  qualifications,
-  stageChanges,
-  tasks,
-  touches,
-  users,
-} from '@/lib/db/schema'
+import { campaignClients, clients, stageChanges, tasks, users } from '@/lib/db/schema'
 
 const TouchSchema = z.object({
   /**
@@ -105,116 +98,72 @@ export async function saveTouch(_prev: TouchState, formData: FormData): Promise<
     return { ok: false, error: where || 'Некорректные данные' }
   }
   const d = parsed.data
-  const db = await getDb()
-  const userId = await currentUserId()
 
-  const [touch] = await db
-    .insert(touches)
-    .values({
-      clientId: d.clientId,
-      campaignId: d.campaignId,
-      userId,
-      channel: 'call',
-      outcome: d.outcome,
-      gotQuoteRequest: Boolean(d.gotQuoteRequest),
-      note: d.note || null,
-    })
-    .returning({ id: touches.id })
+  await recordTouch({
+    clientId: d.clientId,
+    campaignId: d.campaignId ?? null,
+    linkId: d.linkId ?? null,
+    userId: await currentUserId(),
+    outcome: d.outcome,
+    note: d.note,
+    gotQuoteRequest: Boolean(d.gotQuoteRequest),
+    contactPosition: d.contactPosition,
+    peopleServed: num(d.peopleServed),
+    monthlyBudget: num(d.monthlyBudget),
+    otherSuppliers: d.otherSuppliers,
+    clientType: d.clientType,
+    isQualified: d.isQualified ?? null,
+    rejectReason: d.rejectReason,
+    nextStepDate: d.nextStepDate,
+    nextStepTitle: d.nextStepTitle,
+    currentStage: d.currentStage,
+    stageTouched: Boolean(d.stageTouched),
+    stage: d.stage,
+  })
 
-  // Квалификацию пишем, только если хоть что-то заполнено — иначе плодим пустые записи.
-  const hasQual =
-    d.contactPosition ||
-    d.peopleServed ||
-    d.monthlyBudget ||
-    d.otherSuppliers ||
-    d.isQualified ||
-    (d.clientType && d.clientType !== 'unknown')
-
-  if (hasQual) {
-    await db.insert(qualifications).values({
-      clientId: d.clientId,
-      contactPosition: d.contactPosition || null,
-      peopleServed: num(d.peopleServed),
-      monthlyBudget: num(d.monthlyBudget),
-      otherSuppliers: d.otherSuppliers || null,
-      clientType: d.clientType ?? 'unknown',
-      isQualified: d.isQualified ?? null,
-      rejectReason: d.rejectReason || null,
-      filledBy: userId,
-    })
-  }
-
-  if (d.nextStepDate) {
-    await db.insert(tasks).values({
-      clientId: d.clientId,
-      assignedTo: userId,
-      dueDate: d.nextStepDate,
-      title: d.nextStepTitle || 'Перезвонить',
-      createdFromTouchId: touch.id,
-    })
-  }
-
-  // Стадия воронки. Если её не выбирали руками — определяем по итогу звонка.
-  const current = d.currentStage ?? 'lead'
-  const nextStage =
-    d.stageTouched && d.stage
-      ? d.stage
-      : suggestStage(current, d.outcome, Boolean(d.gotQuoteRequest))
-
-  // Пишем только настоящий переход, иначе история забьётся пустыми записями.
-  if (d.linkId && nextStage !== current) {
-    await db
-      .update(campaignClients)
-      .set({
-        stage: nextStage,
-        stageChangedAt: new Date(),
-        lostReason: nextStage === 'lost' ? d.rejectReason || d.note || null : null,
-      })
-      .where(eq(campaignClients.id, d.linkId))
-
-    await db.insert(stageChanges).values({
-      campaignClientId: d.linkId,
-      fromStage: current,
-      toStage: nextStage,
-      userId,
-      comment: d.note || null,
-    })
-  }
-
-  // Куда двигаем клиента в очереди
-  if (d.linkId) {
-    if (d.outcome === 'reached' || d.outcome === 'refused' || d.outcome === 'wrong_number') {
-      await db
-        .update(campaignClients)
-        .set({ state: 'done' })
-        .where(eq(campaignClients.id, d.linkId))
-    } else if (d.outcome === 'callback') {
-      await db
-        .update(campaignClients)
-        .set({ state: 'postponed' })
-        .where(eq(campaignClients.id, d.linkId))
-    } else {
-      // Не взяли или занято — в конец очереди, попробуем позже
-      await db
-        .update(campaignClients)
-        .set({
-          position: sql`(select coalesce(max(${campaignClients.position}), 0) + 1
-                         from ${campaignClients}
-                         where ${campaignClients.campaignId} = ${d.campaignId})`,
-        })
-        .where(eq(campaignClients.id, d.linkId))
-    }
-  }
-
-  if (d.campaignId) {
-    revalidatePath(`/call/${d.campaignId}/list`)
-    revalidatePath(`/funnel/${d.campaignId}`)
-    revalidatePath(`/call/${d.campaignId}`)
-  }
-  revalidatePath('/clients', 'layout')
-  revalidatePath('/')
-  revalidatePath('/tasks')
   return { ok: true, savedAt: Date.now() }
+}
+
+export interface ContactsState {
+  ok: boolean
+  message: string
+}
+
+/**
+ * Контакты клиента руками.
+ *
+ * Телефонов в выгрузках 1С нет вовсе, а находят их по ходу дела — в 2ГИС,
+ * СБИС, на сайте компании. Записать их было некуда, и найденный номер жил
+ * в блокноте менеджера до первой уборки стола.
+ */
+export async function saveClientContacts(
+  _prev: ContactsState | null,
+  formData: FormData,
+): Promise<ContactsState> {
+  const schema = z.object({
+    clientId: z.coerce.number().int().positive(),
+    phone: z.string().trim().max(64).optional(),
+    contactPerson: z.string().trim().max(200).optional(),
+    email: z.string().trim().max(200).optional(),
+  })
+  const parsed = schema.safeParse(formEntries(formData))
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Некорректные данные' }
+  }
+  const d = parsed.data
+
+  const db = await getDb()
+  await db
+    .update(clients)
+    .set({
+      phone: d.phone ?? null,
+      contactPerson: d.contactPerson ?? null,
+      email: d.email ?? null,
+    })
+    .where(eq(clients.id, d.clientId))
+
+  revalidatePath('/clients', 'layout')
+  return { ok: true, message: d.phone ? 'Сохранено' : 'Сохранено, телефон пуст' }
 }
 
 export interface CampaignPreviewRow {

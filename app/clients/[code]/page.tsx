@@ -13,9 +13,22 @@ import {
 } from '@/lib/queries'
 import { dateRu, dateTimeRu, daysAgoLabel, money, num } from '@/lib/format'
 import { CallForm } from '@/app/call/[campaignId]/CallForm'
+import { Contacts } from './Contacts'
 import type { CampaignKind, Stage } from '@/lib/funnel'
 
 export const dynamic = 'force-dynamic'
+
+/** Как робот оценил разговор — его словарь, переведённый на человеческий. */
+const BOT_CATEGORY: Record<string, string> = {
+  hot: 'согласился на встречу',
+  warm: 'интерес есть',
+  callback: 'просил перезвонить',
+  not_dm: 'не тот человек',
+  not_target: 'не наш клиент',
+  refused: 'отказ',
+  no_answer: 'не взяли',
+  invalid: 'номер не тот',
+}
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -68,6 +81,13 @@ export default async function ClientCard({ params }: { params: Promise<{ code: s
           </Link>
         ) : null}
       </div>
+
+      <Contacts
+        clientId={client.id}
+        phone={client.phone}
+        contactPerson={client.contactPerson}
+        email={client.email}
+      />
 
       {/*
         Рабочая часть карточки. Раньше сюда можно было только смотреть: список
@@ -174,17 +194,47 @@ export default async function ClientCard({ params }: { params: Promise<{ code: s
         ) : (
           <ul className="space-y-3">
             {touches.map((t) => (
-              <li key={t.id} className="border-l-2 border-slate-200 pl-3">
+              <li
+                key={t.id}
+                className={`border-l-2 pl-3 ${
+                  t.channel === 'bot' ? 'border-indigo-300' : 'border-slate-200'
+                }`}
+              >
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-sm font-medium">
                     {OUTCOME_LABEL[t.outcome] ?? t.outcome}
+                    {t.channel === 'bot' ? (
+                      <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-normal text-indigo-800">
+                        робот{t.botCategory ? ` · ${BOT_CATEGORY[t.botCategory] ?? t.botCategory}` : ''}
+                      </span>
+                    ) : null}
                   </span>
                   <span className="text-xs text-slate-400">{dateTimeRu(t.happenedAt)}</span>
                 </div>
                 {t.note ? <p className="mt-0.5 text-sm text-slate-600">{t.note}</p> : null}
+
+                {/*
+                  Расшифровка — то, ради чего всё затевалось. Собственник про
+                  своих клиентов говорил «я фантазирую»: записывать было негде.
+                  Свёрнута, потому что разговор длинный, а в ленте нужен обзор.
+                */}
+                {t.transcript ? (
+                  <details className="mt-1.5">
+                    <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-900">
+                      Расшифровка разговора
+                    </summary>
+                    <pre className="mt-1.5 max-h-96 overflow-y-auto whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">
+                      {t.transcript}
+                    </pre>
+                  </details>
+                ) : null}
+
                 <div className="mt-0.5 text-xs text-slate-400">
-                  {t.userName ?? 'без автора'}
+                  {t.channel === 'bot' ? 'голосовой робот' : (t.userName ?? 'без автора')}
                   {t.gotQuoteRequest ? ' · договорились о просчёте' : ''}
+                  {t.durationSec ? ` · ${Math.round(t.durationSec / 6) / 10} мин` : ''}
+                  {t.costRub ? ` · ${t.costRub.toFixed(0)} ₽` : ''}
+                  {t.recording ? ` · запись ${t.recording}` : ''}
                 </div>
               </li>
             ))}

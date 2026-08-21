@@ -261,7 +261,13 @@ export const stageChanges = pgTable(
 
 // ---------------------------------------------------------------- касания
 
-export const touchChannel = pgEnum('touch_channel', ['call', 'email', 'meeting', 'messenger'])
+export const touchChannel = pgEnum('touch_channel', [
+  'call',
+  'bot', // звонок голосового робота
+  'email',
+  'meeting',
+  'messenger',
+])
 
 export const touchOutcome = pgEnum('touch_outcome', [
   'reached', // дозвонился
@@ -291,6 +297,23 @@ export const touches = pgTable(
     gotQuoteRequest: boolean('got_quote_request').notNull().default(false),
 
     note: text('note'),
+
+    /**
+     * Разговор целиком — так, как его расслышало распознавание. Хранится
+     * рядом с касанием, а не отдельной таблицей: это часть одного разговора,
+     * и смотреть его будут там же, где и остальное по клиенту.
+     *
+     * Ради него всё и затевалось: собственник про своих клиентов говорил
+     * «я фантазирую» — потому что записывать было негде.
+     */
+    transcript: text('transcript'),
+    /** Имя файла записи у робота. Сам файл лежит там, где идёт звонок. */
+    recording: text('recording'),
+    /** Как робот оценил разговор: hot, warm, callback, not_dm, refused… */
+    botCategory: varchar('bot_category', { length: 32 }),
+    /** Во что обошёлся звонок — робот считает по своим ставкам. */
+    costRub: doublePrecision('cost_rub'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

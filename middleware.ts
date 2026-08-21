@@ -12,6 +12,15 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
+  /*
+   * Ход робота. Он ходит не браузером и куки не носит — у него свой ключ,
+   * который проверяется в самом обработчике. Перенаправлять его на форму
+   * входа бессмысленно: он получит страницу вместо ответа и промолчит.
+   */
+  if (pathname.startsWith('/api/bot/')) {
+    return NextResponse.next()
+  }
+
   const session = await verifySession(req.cookies.get(SESSION_COOKIE)?.value)
   if (session) return NextResponse.next()
 
