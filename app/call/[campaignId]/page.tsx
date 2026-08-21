@@ -16,6 +16,7 @@ import { dateRu, dateTimeRu, daysAgoLabel, money, num } from '@/lib/format'
 import { skipClient } from '@/app/actions'
 import { CallForm } from './CallForm'
 import { Contacts } from '@/app/clients/[code]/Contacts'
+import { getBotStatus } from '@/lib/botStatus'
 import type { CampaignKind } from '@/lib/funnel'
 
 export const dynamic = 'force-dynamic'
@@ -82,9 +83,10 @@ export default async function CallPage({
   }
 
   const c = next.client
-  const [touches, qual] = await Promise.all([
+  const [touches, qual, bot] = await Promise.all([
     getTouches(c.id),
     getLatestQualification(c.id),
+    getBotStatus(c.id),
   ])
 
   const left = funnel.inList - funnel.called
@@ -142,6 +144,7 @@ export default async function CallPage({
             contactPerson={c.contactPerson}
             email={c.email}
             compact
+            bot={bot}
             hint={
               c.source === 'competitor' ? (
                 <>

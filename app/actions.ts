@@ -162,6 +162,23 @@ export async function saveClientContacts(
     })
     .where(eq(clients.id, d.clientId))
 
+  /*
+   * Если по клиенту уже висит заявка на звонок, номер в ней тоже поправляем.
+   * Номер фиксируется в момент заявки — иначе робот наберёт тот, что был,
+   * а человек будет смотреть на исправленный и не понимать, куда звонили.
+   */
+  if (d.phone) {
+    await db
+      .update(callRequests)
+      .set({ phone: d.phone })
+      .where(
+        and(
+          eq(callRequests.clientId, d.clientId),
+          sql`${callRequests.state} in ('waiting', 'calling')`,
+        ),
+      )
+  }
+
   revalidatePath('/clients', 'layout')
   return { ok: true, message: d.phone ? 'Сохранено' : 'Сохранено, телефон пуст' }
 }
@@ -222,6 +239,35 @@ export async function requestBotCall(
 
   revalidatePath('/clients', 'layout')
   return { ok: true, message: 'Робот позвонит — заявка в очереди' }
+}
+
+/**
+ * Отменить заказанный звонок.
+ *
+ * Нажали не на том клиенте — и до появления этой кнопки исправить было
+ * нечем: заявка висела, пока робот по ней не отзвонится.
+ */
+export async function cancelBotCall(
+  _prev: CallRequestState | null,
+  formData: FormData,
+): Promise<CallRequestState> {
+  const schema = z.object({ clientId: z.coerce.number().int().positive() })
+  const parsed = schema.safeParse(formEntries(formData))
+  if (!parsed.success) return { ok: false, message: 'Клиент не найден' }
+
+  const db = await getDb()
+  await db
+    .update(callRequests)
+    .set({ state: 'cancelled', finishedAt: new Date() })
+    .where(
+      and(
+        eq(callRequests.clientId, parsed.data.clientId),
+        sql`${callRequests.state} in ('waiting', 'calling')`,
+      ),
+    )
+
+  revalidatePath('/clients', 'layout')
+  return { ok: true, message: 'Звонок отменён' }
 }
 
 export interface CampaignPreviewRow {

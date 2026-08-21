@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
-import { callRequests, campaignClients, campaigns, clients } from '@/lib/db/schema'
+import { callRequests, campaignClients, campaigns, clients, settings } from '@/lib/db/schema'
+import { BOT_SEEN_KEY } from '@/lib/botStatus'
 import { checkBotToken } from '@/lib/botAuth'
 import { stageLabel, type CampaignKind, type Stage } from '@/lib/funnel'
 
@@ -29,13 +30,28 @@ export async function GET(req: NextRequest) {
   const db = await getDb()
 
   /*
-   * Заявки, которые кто-то нажал руками, идут вперёд очереди: человек ждёт
-   * этот звонок сейчас, а очередь подождёт.
+   * Заявка забирается только тем, кто и правда собирается звонить: claim=1.
    *
-   * Зависшие возвращаем в работу. Робот мог упасть посреди разговора, и
-   * заявка осталась бы в «звоним» навсегда — с виду работа идёт, на деле
-   * не происходит ничего.
+   * Раньше её помечал «в работе» любой запрос очереди — в том числе
+   * просмотр и проверка связи. Человек нажимал «Позвонить», заявка тут же
+   * уходила в никуда, и кнопка отвечала «уже в очереди», хотя звонить
+   * её никто не собирался.
    */
+  const claim = url.searchParams.get('claim') === '1'
+
+  // Отмечаемся, что робот на связи: система должна уметь ответить, почему
+  // ничего не происходит, — «робот не запущен» или «звонит прямо сейчас».
+  await db
+    .insert(settings)
+    .values({ key: BOT_SEEN_KEY, value: new Date().toISOString(), updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: settings.key,
+      set: { value: new Date().toISOString(), updatedAt: new Date() },
+    })
+
+  // Зависшие возвращаем в работу. Робот мог упасть посреди разговора, и
+  // заявка осталась бы в «звоним» навсегда — с виду работа идёт, на деле
+  // не происходит ничего.
   await db
     .update(callRequests)
     .set({ state: 'waiting', takenAt: null })
@@ -69,7 +85,7 @@ export async function GET(req: NextRequest) {
     .orderBy(asc(callRequests.createdAt))
     .limit(limit)
 
-  if (requested.length > 0) {
+  if (claim && requested.length > 0) {
     await db
       .update(callRequests)
       .set({ state: 'calling', takenAt: new Date() })

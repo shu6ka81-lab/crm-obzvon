@@ -15,6 +15,7 @@ import {
 import { dateRu, dateTimeRu, daysAgoLabel, money, num } from '@/lib/format'
 import { CallForm } from '@/app/call/[campaignId]/CallForm'
 import { Contacts } from './Contacts'
+import { getBotStatus } from '@/lib/botStatus'
 import type { CampaignKind, Stage } from '@/lib/funnel'
 
 export const dynamic = 'force-dynamic'
@@ -52,6 +53,7 @@ export default async function ClientCard({ params }: { params: Promise<{ code: s
     getClientCampaignLink(client.id),
     getClientQuotes(client.id),
   ])
+  const bot = await getBotStatus(client.id)
 
   return (
     <div className="space-y-5">
@@ -89,6 +91,7 @@ export default async function ClientCard({ params }: { params: Promise<{ code: s
         phone={client.phone}
         contactPerson={client.contactPerson}
         email={client.email}
+        bot={bot}
       />
 
       {/*

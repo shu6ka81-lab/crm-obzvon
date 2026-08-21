@@ -2,6 +2,7 @@
 
 import { useActionState } from 'react'
 import {
+  cancelBotCall,
   requestBotCall,
   saveClientContacts,
   type CallRequestState,
@@ -25,6 +26,7 @@ export function Contacts({
   email,
   hint,
   compact = false,
+  bot,
 }: {
   clientId: number
   phone: string | null
@@ -34,6 +36,12 @@ export function Contacts({
   hint?: React.ReactNode
   /** На экране обзвона места мало — поля идут столбиком. */
   compact?: boolean
+  /** На связи ли робот и что с заявкой по этому клиенту. */
+  bot?: {
+    online: boolean
+    secondsAgo: number | null
+    request: { state: string } | null
+  }
 }) {
   const [state, action, pending] = useActionState<ContactsState | null, FormData>(
     saveClientContacts,
@@ -41,6 +49,10 @@ export function Contacts({
   )
   const [call, callAction, calling] = useActionState<CallRequestState | null, FormData>(
     requestBotCall,
+    null,
+  )
+  const [cancel, cancelAction, cancelling] = useActionState<CallRequestState | null, FormData>(
+    cancelBotCall,
     null,
   )
 
@@ -129,13 +141,58 @@ export function Contacts({
           <span className={`text-sm ${call.ok ? 'text-emerald-800' : 'text-red-700'}`}>
             {call.message}
           </span>
-        ) : (
-          <span className="max-w-xl text-xs text-slate-500">
-            Робот наберёт номер, проведёт разговор и вернёт сюда расшифровку. Если клиент
-            назовёт, что нужно закупить, — соберёт черновик КП.
-          </span>
-        )}
+        ) : null}
+        {cancel ? <span className="text-sm text-slate-600">{cancel.message}</span> : null}
       </form>
+
+      {/* Заказали по ошибке — должно быть чем отменить */}
+      {bot?.request ? (
+        <form action={cancelAction} className="mt-2">
+          <input type="hidden" name="clientId" value={clientId} />
+          <button
+            type="submit"
+            disabled={cancelling}
+            className="text-xs text-slate-500 underline-offset-2 hover:text-red-700 hover:underline disabled:opacity-40"
+          >
+            {cancelling ? 'Отменяю…' : 'Отменить звонок'}
+          </button>
+        </form>
+      ) : null}
+
+      {/*
+        Состояние робота. Без него нажатие кнопки уходит в тишину: человек
+        не может отличить «робот не запущен» от «уже звонит». Молчание в ответ
+        на нажатие — худшее, что интерфейс может сделать.
+      */}
+      {bot ? (
+        <div className="mt-2 text-xs">
+          {bot.online ? (
+            <span className="text-emerald-700">
+              ● Робот на связи
+              {bot.request
+                ? bot.request.state === 'calling'
+                  ? ' — звонит этому клиенту'
+                  : ' — заявка в очереди, наберёт через несколько секунд'
+                : ' и ждёт заявок'}
+            </span>
+          ) : (
+            <span className="text-amber-800">
+              ● Робот не запущен
+              {bot.secondsAgo != null
+                ? `, последний раз выходил на связь ${Math.round(bot.secondsAgo / 60)} мин назад`
+                : ' и ни разу не выходил на связь'}
+              . Запустите на своей машине:{' '}
+              <code className="rounded bg-slate-100 px-1">python scripts\crm_bridge.py --watch</code>
+              {bot.request ? ' — заявка сохранена и уйдёт в работу, как только он поднимется.' : ''}
+            </span>
+          )}
+        </div>
+      ) : null}
+
+      <p className="mt-2 max-w-xl text-xs text-slate-500">
+        Робот наберёт номер, проведёт разговор и вернёт сюда расшифровку. Если клиент
+        назовёт, что нужно закупить, — соберёт черновик КП.
+      </p>
     </div>
   )
 }
