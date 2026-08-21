@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import {
   CLIENT_TYPE_LABEL,
   getClientByKey,
+  getClientCampaignLink,
   getLatestQualification,
   getOpenTasks,
   getTouches,
@@ -11,6 +12,8 @@ import {
   SEGMENT_LABEL,
 } from '@/lib/queries'
 import { dateRu, dateTimeRu, daysAgoLabel, money, num } from '@/lib/format'
+import { CallForm } from '@/app/call/[campaignId]/CallForm'
+import type { Stage } from '@/lib/funnel'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,20 +31,67 @@ export default async function ClientCard({ params }: { params: Promise<{ code: s
   const client = await getClientByKey(decodeURIComponent(code))
   if (!client) notFound()
 
-  const [touches, qual, tasks] = await Promise.all([
+  const [touches, qual, tasks, link] = await Promise.all([
     getTouches(client.id),
     getLatestQualification(client.id),
     getOpenTasks(client.id),
+    getClientCampaignLink(client.id),
   ])
 
   return (
     <div className="space-y-5">
-      <div>
-        <Link href="/clients" className="text-xs text-slate-500 hover:text-slate-900">
-          ← Клиенты
-        </Link>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight">{client.name}</h1>
-        <p className="text-sm text-slate-500">Код в 1С · {client.code1c}</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <Link href="/clients" className="text-xs text-slate-500 hover:text-slate-900">
+            ← Клиенты
+          </Link>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight">{client.name}</h1>
+          <p className="text-sm text-slate-500">
+            {client.code1c ? `Код в 1С · ${client.code1c}` : `ИНН · ${client.inn ?? '—'}`}
+            {link ? (
+              <>
+                {' · '}
+                <Link href={`/call/${link.campaignId}/list`} className="hover:text-slate-900">
+                  {link.campaignName}
+                </Link>
+              </>
+            ) : null}
+          </p>
+        </div>
+
+        {link ? (
+          <Link
+            href={`/call/${link.campaignId}?client=${client.id}`}
+            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Открыть в обзвоне
+          </Link>
+        ) : null}
+      </div>
+
+      {/*
+        Рабочая часть карточки. Раньше сюда можно было только смотреть: список
+        показывал «ещё не квалифицирован», а заполнить это можно было лишь из
+        очереди обзвона. Человек открывал компанию, которую хотел, и упирался
+        в тупик.
+      */}
+      <div className="rounded-lg border border-slate-200 bg-white p-5">
+        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold">Записать разговор</h2>
+          <span className="text-xs text-slate-400">
+            {link
+              ? 'Сохранится в историю и подвинет клиента по воронке'
+              : 'Клиент не стоит ни в одной очереди — запишем разговор без движения по воронке'}
+          </span>
+        </div>
+        <CallForm
+          campaignId={link?.campaignId ?? null}
+          clientId={client.id}
+          linkId={link?.linkId ?? null}
+          presetBudget={link?.presetBudget ?? null}
+          currentStage={(link?.stage ?? 'lead') as Stage}
+          refreshAfterSave
+        />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">

@@ -127,9 +127,9 @@ export async function getCampaignClient(campaignId: number, clientId: number) {
 }
 
 /** Весь список кампании — чтобы видеть, кто впереди, и выбрать вручную. */
-export async function listCampaignClients(campaignId: number) {
+export async function listCampaignClients(campaignId: number, limit?: number) {
   const db = await getDb()
-  return db
+  const q = db
     .select({
       clientId: clients.id,
       code1c: clients.code1c,
@@ -162,6 +162,10 @@ export async function listCampaignClients(campaignId: number) {
     .innerJoin(clients, eq(clients.id, campaignClients.clientId))
     .where(eq(campaignClients.campaignId, campaignId))
     .orderBy(asc(campaignClients.position))
+
+  // Список на 2500 строк не нужен ни на главной, ни в предпросмотре —
+  // там смотрят начало очереди, а весь список открывают отдельной страницей.
+  return limit ? q.limit(limit) : q
 }
 
 export async function getClientById(clientId: number) {
@@ -182,6 +186,36 @@ export function clientKey(c: {
   id: number
 }): string {
   return c.code1c ?? c.inn ?? String(c.id)
+}
+
+/**
+ * В какой очереди стоит клиент. Нужно, чтобы с его карточки можно было
+ * работать так же, как из обзвона: записать разговор, заполнить квалификацию
+ * и подвинуть по воронке — а не только смотреть.
+ *
+ * Клиент может стоять сразу в нескольких очередях. Берём ту, где он ещё не
+ * отработан: именно с ней человек и собирается что-то делать.
+ */
+export async function getClientCampaignLink(clientId: number) {
+  const db = await getDb()
+  const [row] = await db
+    .select({
+      linkId: campaignClients.id,
+      campaignId: campaigns.id,
+      campaignName: campaigns.name,
+      stage: campaignClients.stage,
+      state: campaignClients.state,
+      presetBudget: campaignClients.presetBudget,
+    })
+    .from(campaignClients)
+    .innerJoin(campaigns, eq(campaigns.id, campaignClients.campaignId))
+    .where(eq(campaignClients.clientId, clientId))
+    .orderBy(
+      sql`case when ${campaignClients.state} = 'done' then 1 else 0 end`,
+      asc(campaigns.id),
+    )
+    .limit(1)
+  return row ?? null
 }
 
 export async function getClientByKey(key: string) {

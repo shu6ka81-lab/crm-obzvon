@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { listCampaigns, getFunnel } from '@/lib/queries'
 import { money, num } from '@/lib/format'
+import { CampaignClients } from './CampaignClients'
 
 export const dynamic = 'force-dynamic'
 
@@ -93,6 +94,8 @@ export default async function Home() {
                   {num(done)} / {num(total)} отработано
                 </span>
               </div>
+
+              <CampaignClients campaignId={c.id} total={total} />
             </div>
           )
         })}

@@ -8,6 +8,7 @@ import { and, asc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDb } from '@/lib/db'
 import { suggestStage } from '@/lib/funnel'
+import { listCampaignClients } from '@/lib/queries'
 import {
   campaignClients,
   qualifications,
@@ -18,7 +19,12 @@ import {
 } from '@/lib/db/schema'
 
 const TouchSchema = z.object({
-  campaignId: z.coerce.number().int().positive(),
+  /**
+   * Кампании может не быть: с карточки клиента звонят и тем, кто ни в одной
+   * очереди не стоит. Тогда касание пишется просто клиенту, без движения
+   * по очереди — иначе такую работу вообще некуда записать.
+   */
+  campaignId: z.coerce.number().int().positive().optional(),
   clientId: z.coerce.number().int().positive(),
   linkId: z.coerce.number().int().positive().optional(),
 
@@ -200,13 +206,49 @@ export async function saveTouch(_prev: TouchState, formData: FormData): Promise<
     }
   }
 
-  revalidatePath(`/call/${d.campaignId}/list`)
-  revalidatePath(`/funnel/${d.campaignId}`)
-
-  revalidatePath(`/call/${d.campaignId}`)
+  if (d.campaignId) {
+    revalidatePath(`/call/${d.campaignId}/list`)
+    revalidatePath(`/funnel/${d.campaignId}`)
+    revalidatePath(`/call/${d.campaignId}`)
+  }
+  revalidatePath('/clients', 'layout')
   revalidatePath('/')
   revalidatePath('/tasks')
   return { ok: true, savedAt: Date.now() }
+}
+
+export interface CampaignPreviewRow {
+  clientId: number
+  key: string
+  name: string
+  totalSum: number
+  lastOrderDate: string | null
+  manager1c: string | null
+  state: string
+  touchCount: number
+}
+
+/**
+ * Начало очереди кампании — для раскрывающегося списка на главной.
+ *
+ * Грузим по требованию и небольшими порциями: держать на странице все пять
+ * очередей целиком — это пять тысяч строк, которые почти всегда не нужны.
+ */
+export async function previewCampaignClients(
+  campaignId: number,
+  limit = 25,
+): Promise<CampaignPreviewRow[]> {
+  const rows = await listCampaignClients(campaignId, Math.min(Math.max(limit, 1), 200))
+  return rows.map((r) => ({
+    clientId: r.clientId,
+    key: r.key,
+    name: r.name,
+    totalSum: Number(r.totalSum),
+    lastOrderDate: r.lastOrderDate ? String(r.lastOrderDate) : null,
+    manager1c: r.manager1c,
+    state: r.state,
+    touchCount: Number(r.touchCount),
+  }))
 }
 
 /**

@@ -1,6 +1,7 @@
 'use client'
 
-import { useActionState, useState } from 'react'
+import { useActionState, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { saveTouch, type TouchState } from '@/app/actions'
 import { ALL_STAGES, STAGE_HINT, STAGE_LABEL, type Stage } from '@/lib/funnel'
 
@@ -43,27 +44,40 @@ export function CallForm({
   linkId,
   presetBudget,
   currentStage,
+  refreshAfterSave = false,
 }: {
-  campaignId: number
+  /** Может отсутствовать: с карточки клиента звонят и вне очередей. */
+  campaignId?: number | null
   clientId: number
-  linkId: number
+  linkId?: number | null
   presetBudget: number | null
   currentStage: Stage
+  /**
+   * На экране обзвона после сохранения открывается следующий в очереди, и
+   * обновлять страницу незачем. На карточке клиента человек остаётся на месте
+   * и ждёт увидеть свою запись в истории — без обновления она не появится.
+   */
+  refreshAfterSave?: boolean
 }) {
   const [showQual, setShowQual] = useState(true)
   const [gotQuote, setGotQuote] = useState(false)
   const [stage, setStage] = useState<Stage>(currentStage)
   const [stageTouched, setStageTouched] = useState(false)
   const [state, formAction, pending] = useActionState<TouchState, FormData>(saveTouch, null)
+  const router = useRouter()
+
+  useEffect(() => {
+    if (refreshAfterSave && state?.ok) router.refresh()
+  }, [refreshAfterSave, state?.ok, state?.savedAt, router])
 
   // Если стадию не трогали руками, её выберет сервер по итогу звонка:
   // на клиенте это делать нельзя — состояние не успеет попасть в форму.
 
   return (
     <form action={formAction} className="space-y-5">
-      <input type="hidden" name="campaignId" value={campaignId} />
+      {campaignId ? <input type="hidden" name="campaignId" value={campaignId} /> : null}
       <input type="hidden" name="clientId" value={clientId} />
-      <input type="hidden" name="linkId" value={linkId} />
+      {linkId ? <input type="hidden" name="linkId" value={linkId} /> : null}
       <input type="hidden" name="currentStage" value={currentStage} />
       <input type="hidden" name="stageTouched" value={stageTouched ? '1' : ''} />
 
@@ -250,7 +264,7 @@ export function CallForm({
       {/* --- кнопки --- */}
       <div className="flex flex-wrap items-center gap-2">
         <OutcomeButton value="reached" tone="primary" pending={pending}>
-          Дозвонился — сохранить и следующий
+          {refreshAfterSave ? 'Дозвонился — сохранить' : 'Дозвонился — сохранить и следующий'}
         </OutcomeButton>
         <OutcomeButton value="no_answer" pending={pending}>
           Не взяли
@@ -275,9 +289,11 @@ export function CallForm({
         </p>
       ) : null}
 
+      {/* Подсказка про очередь уместна только там, где очередь есть. */}
       <p className="text-xs text-slate-400">
-        «Не взяли» и «Занято» отправляют клиента в конец очереди — вернёмся к нему позже.
-        «Дозвонился», «Отказ» и «Номер не тот» закрывают карточку в этой кампании.
+        {linkId
+          ? '«Не взяли» и «Занято» отправляют клиента в конец очереди — вернёмся к нему позже. «Дозвонился», «Отказ» и «Номер не тот» закрывают карточку в этой кампании.'
+          : 'Разговор запишется в историю клиента. В очередях обзвона он не состоит, поэтому никуда не переместится.'}
       </p>
     </form>
   )
