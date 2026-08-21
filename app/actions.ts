@@ -9,7 +9,15 @@ import { z } from 'zod'
 import { getDb } from '@/lib/db'
 import { recordTouch } from '@/lib/touch'
 import { getClientCampaignLink, listCampaignClients } from '@/lib/queries'
-import { callRequests, campaignClients, clients, stageChanges, tasks, users } from '@/lib/db/schema'
+import {
+  callRequests,
+  campaignClients,
+  clients,
+  liveCalls,
+  stageChanges,
+  tasks,
+  users,
+} from '@/lib/db/schema'
 
 const TouchSchema = z.object({
   /**
@@ -268,6 +276,42 @@ export async function cancelBotCall(
 
   revalidatePath('/clients', 'layout')
   return { ok: true, message: 'Звонок отменён' }
+}
+
+export interface LiveCallView {
+  transcript: string
+  status: string
+  finished: boolean
+  startedAt: string
+  updatedAt: string
+}
+
+/**
+ * Разговор, который идёт прямо сейчас, — для карточки клиента.
+ *
+ * Отдельно от ключа робота: сюда ходит браузер с обычной сессией.
+ * Считается свежим только пока робот присылает реплики — иначе на экране
+ * навсегда осталась бы «идёт разговор» от вчерашнего звонка.
+ */
+export async function getLiveCall(clientId: number): Promise<LiveCallView | null> {
+  const db = await getDb()
+  const [row] = await db
+    .select()
+    .from(liveCalls)
+    .where(eq(liveCalls.clientId, clientId))
+    .limit(1)
+  if (!row) return null
+
+  const stale = Date.now() - row.updatedAt.getTime() > 90_000
+  if (stale && !row.finishedAt) return null
+
+  return {
+    transcript: row.transcript,
+    status: row.status,
+    finished: Boolean(row.finishedAt),
+    startedAt: row.startedAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  }
 }
 
 export interface CampaignPreviewRow {

@@ -394,6 +394,31 @@ export const quoteStatus = pgEnum('quote_status', ['draft', 'sent', 'won', 'lost
  * Ключевой артефакт стадии «Аудит цен»: клиент присылает, что закупает,
  * мы отвечаем ценами по своему прайсу.
  */
+/**
+ * Разговор, который идёт прямо сейчас.
+ *
+ * Нужен, чтобы смотреть звонок вживую, как он идёт, — реплики появляются
+ * по мере распознавания. Живёт отдельно от истории: там законченные
+ * разговоры, а здесь один текущий, и он переписывается каждые пару секунд.
+ */
+export const liveCalls = pgTable(
+  'live_calls',
+  {
+    id: serial('id').primaryKey(),
+    clientId: integer('client_id')
+      .notNull()
+      .references(() => clients.id),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    /** Реплики построчно: «Робот: …» / «Клиент: …». */
+    transcript: text('transcript').notNull().default(''),
+    /** Что робот делает прямо сейчас: набирает, говорит, кладёт трубку. */
+    status: varchar('status', { length: 32 }).notNull().default('звоним'),
+  },
+  (t) => [uniqueIndex('live_calls_client_uq').on(t.clientId)],
+)
+
 export const callRequestState = pgEnum('call_request_state', [
   'waiting', // ждёт, когда робот возьмёт
   'calling', // робот взял и звонит

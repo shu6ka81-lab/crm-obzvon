@@ -15,7 +15,10 @@ import {
 import { dateRu, dateTimeRu, daysAgoLabel, money, num } from '@/lib/format'
 import { CallForm } from '@/app/call/[campaignId]/CallForm'
 import { Contacts } from './Contacts'
+import { Dialog } from './Dialog'
+import { LiveCall } from './LiveCall'
 import { getBotStatus } from '@/lib/botStatus'
+import { getLiveCall } from '@/app/actions'
 import type { CampaignKind, Stage } from '@/lib/funnel'
 
 export const dynamic = 'force-dynamic'
@@ -53,7 +56,10 @@ export default async function ClientCard({ params }: { params: Promise<{ code: s
     getClientCampaignLink(client.id),
     getClientQuotes(client.id),
   ])
-  const bot = await getBotStatus(client.id)
+  const [bot, live] = await Promise.all([
+    getBotStatus(client.id),
+    getLiveCall(client.id),
+  ])
 
   return (
     <div className="space-y-5">
@@ -93,6 +99,8 @@ export default async function ClientCard({ params }: { params: Promise<{ code: s
         email={client.email}
         bot={bot}
       />
+
+      <LiveCall clientId={client.id} initial={live} />
 
       {/*
         Рабочая часть карточки. Раньше сюда можно было только смотреть: список
@@ -256,14 +264,23 @@ export default async function ClientCard({ params }: { params: Promise<{ code: s
                   своих клиентов говорил «я фантазирую»: записывать было негде.
                   Свёрнута, потому что разговор длинный, а в ленте нужен обзор.
                 */}
+                {t.recording ? (
+                  <audio
+                    controls
+                    preload="none"
+                    src={`/api/recording/${encodeURIComponent(t.recording)}`}
+                    className="mt-1.5 h-8 w-full max-w-md"
+                  />
+                ) : null}
+
                 {t.transcript ? (
                   <details className="mt-1.5">
                     <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-900">
                       Расшифровка разговора
                     </summary>
-                    <pre className="mt-1.5 max-h-96 overflow-y-auto whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">
-                      {t.transcript}
-                    </pre>
+                    <div className="mt-1.5 max-h-96 overflow-y-auto rounded-md bg-slate-50 p-3">
+                      <Dialog text={t.transcript} />
+                    </div>
                   </details>
                 ) : null}
 
@@ -272,7 +289,7 @@ export default async function ClientCard({ params }: { params: Promise<{ code: s
                   {t.gotQuoteRequest ? ' · договорились о просчёте' : ''}
                   {t.durationSec ? ` · ${Math.round(t.durationSec / 6) / 10} мин` : ''}
                   {t.costRub ? ` · ${t.costRub.toFixed(0)} ₽` : ''}
-                  {t.recording ? ` · запись ${t.recording}` : ''}
+
                 </div>
               </li>
             ))}
