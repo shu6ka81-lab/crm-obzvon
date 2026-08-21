@@ -31,6 +31,40 @@ const CATEGORY_TO_OUTCOME: Record<string, TouchOutcome> = {
 
 type TouchOutcome = 'reached' | 'no_answer' | 'busy' | 'wrong_number' | 'callback' | 'refused'
 
+/** Как разговор оборвался — тоже подсказка об итоге, если категория не легла. */
+const REASON_TO_OUTCOME: Record<string, TouchOutcome> = {
+  hangup: 'reached',
+  completed: 'reached',
+  no_answer: 'no_answer',
+  busy: 'busy',
+  failed: 'no_answer',
+  timeout: 'no_answer',
+}
+
+/**
+ * Разбирает то, что прислал робот. Категория приходит не всегда чистым кодом:
+ * встречается «warm / hangup» — категория и причина обрыва одной строкой.
+ *
+ * Разбирать это надо терпимо. Из-за строгой проверки один живой разговор уже
+ * потерялся: робот отработал, запись легла на диск, а CRM ответила отказом
+ * из-за подписи. Метка не стоит разговора.
+ */
+export function outcomeFromCategory(raw: string | undefined): TouchOutcome | null {
+  if (!raw) return null
+  const parts = raw
+    .toLowerCase()
+    .split(/[\s/,;|]+/)
+    .filter(Boolean)
+
+  for (const p of parts) {
+    if (CATEGORY_TO_OUTCOME[p]) return CATEGORY_TO_OUTCOME[p]
+  }
+  for (const p of parts) {
+    if (REASON_TO_OUTCOME[p]) return REASON_TO_OUTCOME[p]
+  }
+  return null
+}
+
 const Body = z.object({
   clientId: z.coerce.number().int().positive(),
   /** Заявка, по которой звонили, — её надо закрыть, иначе повиснет в «звоним». */
@@ -86,11 +120,17 @@ export async function POST(req: NextRequest) {
   }
   const d = parsed.data
 
-  const outcome = d.outcome ?? (d.category ? CATEGORY_TO_OUTCOME[d.category] : undefined)
-  if (!outcome) {
-    return NextResponse.json(
-      { error: `Не понял итог звонка: категория «${d.category ?? '—'}» неизвестна` },
-      { status: 400 },
+  /*
+   * Если итог не разобрался, а разговор был — считаем состоявшимся.
+   * Потерять запись живого разговора из-за неизвестной подписи нельзя:
+   * запись и расшифровка ценнее, чем точность метки.
+   */
+  const guessed = d.outcome ?? outcomeFromCategory(d.category)
+  const outcome: TouchOutcome = guessed ?? (d.transcript || d.durationSec ? 'reached' : 'no_answer')
+  if (!guessed) {
+    console.warn(
+      `Итог звонка не разобрался: категория «${d.category ?? '—'}». ` +
+        `Записан как «${outcome}» — разговор важнее подписи.`,
     )
   }
 
