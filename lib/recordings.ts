@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 /**
@@ -50,4 +50,27 @@ export async function readRecording(name: string): Promise<Buffer | null> {
   } catch {
     return null
   }
+}
+
+/**
+ * Какие из этих записей действительно лежат на диске.
+ *
+ * В базе имя файла появляется в момент, когда робот отчитался о звонке, —
+ * а сам файл приезжает следующим запросом и может не приехать вовсе.
+ * Тогда в карточке висел проигрыватель, который ничего не играет: человек
+ * жмёт на него и решает, что запись сломана. Лучше не показывать вовсе.
+ */
+export async function presentRecordings(names: (string | null)[]): Promise<Set<string>> {
+  const wanted = [...new Set(names.filter((n): n is string => Boolean(n)))]
+  const found = await Promise.all(
+    wanted.map(async (n) => {
+      try {
+        await access(path.join(RECORDINGS_DIR, safeName(n)))
+        return n
+      } catch {
+        return null
+      }
+    }),
+  )
+  return new Set(found.filter((n): n is string => n !== null))
 }

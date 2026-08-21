@@ -18,6 +18,7 @@ import { Contacts } from './Contacts'
 import { Dialog } from './Dialog'
 import { LiveCall } from './LiveCall'
 import { getBotStatus } from '@/lib/botStatus'
+import { presentRecordings } from '@/lib/recordings'
 import { getLiveCall } from '@/app/actions'
 import type { CampaignKind, Stage } from '@/lib/funnel'
 
@@ -56,9 +57,13 @@ export default async function ClientCard({ params }: { params: Promise<{ code: s
     getClientCampaignLink(client.id),
     getClientQuotes(client.id),
   ])
-  const [bot, live] = await Promise.all([
+  const [bot, live, audio] = await Promise.all([
     getBotStatus(client.id),
     getLiveCall(client.id),
+    // Имя записи в базе ещё не значит, что файл доехал: он приезжает
+    // отдельным запросом после отчёта о звонке. Проигрыватель без файла
+    // показывает 0:00 и выглядит сломанным — лучше не показывать его.
+    presentRecordings(touches.map((t) => t.recording)),
   ])
 
   return (
@@ -264,13 +269,22 @@ export default async function ClientCard({ params }: { params: Promise<{ code: s
                   своих клиентов говорил «я фантазирую»: записывать было негде.
                   Свёрнута, потому что разговор длинный, а в ленте нужен обзор.
                 */}
-                {t.recording ? (
+                {/*
+                  preload="metadata", а не "none": иначе браузер не знает
+                  длину и рисует 0:00 / 0:00 у полностью исправной записи —
+                  человек видит это и решает, что звук не записался.
+                */}
+                {t.recording && audio.has(t.recording) ? (
                   <audio
                     controls
-                    preload="none"
+                    preload="metadata"
                     src={`/api/recording/${encodeURIComponent(t.recording)}`}
                     className="mt-1.5 h-8 w-full max-w-md"
                   />
+                ) : t.recording ? (
+                  <p className="mt-1.5 text-xs text-amber-700">
+                    Запись разговора не доехала с машины, которая звонила
+                  </p>
                 ) : null}
 
                 {t.transcript ? (
