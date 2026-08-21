@@ -178,8 +178,18 @@ if ! command -v caddy >/dev/null 2>&1; then
   apt-get update && apt-get install -y caddy
 fi
 
+# На голом IP публичный сертификат выпустить нельзя — ни один центр их не
+# выдаёт. Значит сервер выпускает его сам, своим внутренним центром: браузер
+# один раз предупредит, но соединение будет защищённым и куки сессии
+# сохранятся. Без этой строки установка по IP клала сайт в ERR_SSL_PROTOCOL_ERROR.
+TLS=""
+if [[ "${DOMAIN#https://}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  TLS="
+    tls internal"
+fi
+
 cat > /etc/caddy/Caddyfile <<EOF
-$DOMAIN {
+$DOMAIN {$TLS
     reverse_proxy 127.0.0.1:3000
     encode gzip
     header {
@@ -244,7 +254,7 @@ echo "бэкап в /var/backups/crm, хранение 30 дней"
 say "Готово"
 cat <<EOF
 
-Адрес:  https://$DOMAIN
+Адрес:  https://${DOMAIN#https://}
         (сертификат выпускается 10–30 секунд после первого обращения)
 
 Что дальше:
