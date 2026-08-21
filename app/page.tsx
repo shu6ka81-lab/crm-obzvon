@@ -50,7 +50,19 @@ export default async function Home() {
             >
               <div className="flex items-start justify-between gap-6">
                 <div className="min-w-0">
-                  <h2 className="text-base font-semibold text-slate-900">{c.name}</h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-semibold text-slate-900">{c.name}</h2>
+                    {/* Две разные работы: привлечь незнакомого и вернуть ушедшего. */}
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${
+                        c.kind === 'return'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-indigo-100 text-indigo-800'
+                      }`}
+                    >
+                      {c.kind === 'return' ? 'возврат' : 'привлечение'}
+                    </span>
+                  </div>
                   {c.description ? (
                     <p className="mt-1 max-w-2xl text-sm text-slate-500">{c.description}</p>
                   ) : null}

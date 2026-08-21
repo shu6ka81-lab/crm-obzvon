@@ -180,11 +180,25 @@ export const FUNNEL_ORDER = [
   'won',
 ] as const
 
+/**
+ * Два разных занятия, которые нельзя мерить одной линейкой.
+ *
+ * `acquisition` — привлечь того, кто у нас никогда не покупал.
+ * `return` — вернуть того, кто покупал и перестал.
+ *
+ * Разговор, возражения и то, что считается успехом, у них разные: во втором
+ * случае нас уже знают, и вопрос не «кто вы», а «почему мы от вас ушли».
+ * Стадии те же, а называются по-своему — иначе «Лид» на компании, которая
+ * принесла миллион, читается как издевательство.
+ */
+export const campaignKind = pgEnum('campaign_kind', ['acquisition', 'return'])
+
 export const campaigns = pgTable('campaigns', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
   description: text('description'),
   sourceFile: text('source_file'),
+  kind: campaignKind('kind').notNull().default('acquisition'),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })

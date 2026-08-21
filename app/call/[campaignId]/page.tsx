@@ -15,6 +15,7 @@ import {
 import { dateRu, dateTimeRu, daysAgoLabel, money, num } from '@/lib/format'
 import { skipClient } from '@/app/actions'
 import { CallForm } from './CallForm'
+import type { CampaignKind } from '@/lib/funnel'
 
 export const dynamic = 'force-dynamic'
 
@@ -288,6 +289,7 @@ export default async function CallPage({
             linkId={next.linkId}
             presetBudget={next.presetBudget}
             currentStage={next.stage}
+            kind={campaign.kind as CampaignKind}
           />
 
           <Link

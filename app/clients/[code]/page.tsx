@@ -13,7 +13,7 @@ import {
 } from '@/lib/queries'
 import { dateRu, dateTimeRu, daysAgoLabel, money, num } from '@/lib/format'
 import { CallForm } from '@/app/call/[campaignId]/CallForm'
-import type { Stage } from '@/lib/funnel'
+import type { CampaignKind, Stage } from '@/lib/funnel'
 
 export const dynamic = 'force-dynamic'
 
@@ -90,6 +90,7 @@ export default async function ClientCard({ params }: { params: Promise<{ code: s
           linkId={link?.linkId ?? null}
           presetBudget={link?.presetBudget ?? null}
           currentStage={(link?.stage ?? 'lead') as Stage}
+          kind={(link?.campaignKind ?? 'acquisition') as CampaignKind}
           refreshAfterSave
         />
       </div>

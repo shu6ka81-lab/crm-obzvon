@@ -9,6 +9,12 @@ export type Stage =
   | 'won'
   | 'lost'
 
+/**
+ * Тип кампании: привлекаем нового или возвращаем ушедшего.
+ * Ступени одни и те же, но называются по-разному — см. STAGE_LABEL_BY_KIND.
+ */
+export type CampaignKind = 'acquisition' | 'return'
+
 export const STAGE_LABEL: Record<Stage, string> = {
   lead: 'Лид',
   contacted: 'Знакомство',
@@ -27,6 +33,43 @@ export const STAGE_HINT: Record<Stage, string> = {
   decision: 'Решение за клиентом',
   won: 'Пошли отгрузки',
   lost: 'Не наш клиент или отказался',
+}
+
+/**
+ * Возврат ушедшего — другой разговор. Нас уже знают, и вопрос не «кто вы»,
+ * а «почему мы от вас ушли». Поэтому и слова другие: не «лид», а «молчит»,
+ * не «начали работать», а «вернулся».
+ *
+ * Отдельный набор ступеней заводить не стали: работа одна и та же — дозвониться,
+ * узнать, что закупают, посчитать, дождаться решения. Разное здесь — вход
+ * и выход, а их достаточно назвать своими именами.
+ */
+const RETURN_LABEL: Record<Stage, string> = {
+  lead: 'Молчит',
+  contacted: 'Вышли на связь',
+  audit: 'Узнали, что закупают',
+  quote: 'КП отправлено',
+  decision: 'Ждём решения',
+  won: 'Вернулся',
+  lost: 'Не вернётся',
+}
+
+const RETURN_HINT: Record<Stage, string> = {
+  lead: 'Покупал и перестал. Разговора ещё не было',
+  contacted: 'Дозвонились, выяснили, почему ушли',
+  audit: 'Получили перечень того, что закупают сейчас и почём',
+  quote: 'Собрали предложение по их позициям и отправили',
+  decision: 'Решение за клиентом',
+  won: 'Снова пошли отгрузки',
+  lost: 'Ушёл окончательно — записываем причину',
+}
+
+export function stageLabel(stage: Stage, kind: CampaignKind = 'acquisition'): string {
+  return kind === 'return' ? RETURN_LABEL[stage] : STAGE_LABEL[stage]
+}
+
+export function stageHint(stage: Stage, kind: CampaignKind = 'acquisition'): string {
+  return kind === 'return' ? RETURN_HINT[stage] : STAGE_HINT[stage]
 }
 
 /** Порядок для отчёта. «Отказ» вне линии — это выход, а не ступень. */

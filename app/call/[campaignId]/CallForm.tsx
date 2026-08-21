@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { saveTouch, type TouchState } from '@/app/actions'
-import { ALL_STAGES, STAGE_HINT, STAGE_LABEL, type Stage } from '@/lib/funnel'
+import { ALL_STAGES, stageHint, stageLabel, type CampaignKind, type Stage } from '@/lib/funnel'
 
 const FIELD =
   'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-200'
@@ -44,6 +44,7 @@ export function CallForm({
   linkId,
   presetBudget,
   currentStage,
+  kind = 'acquisition',
   refreshAfterSave = false,
 }: {
   /** Может отсутствовать: с карточки клиента звонят и вне очередей. */
@@ -52,6 +53,8 @@ export function CallForm({
   linkId?: number | null
   presetBudget: number | null
   currentStage: Stage
+  /** Возврат ушедшего клиента называет ступени своими словами. */
+  kind?: CampaignKind
   /**
    * На экране обзвона после сохранения открывается следующий в очереди, и
    * обновлять страницу незачем. На карточке клиента человек остаётся на месте
@@ -233,11 +236,11 @@ export function CallForm({
           >
             {ALL_STAGES.map((s) => (
               <option key={s} value={s}>
-                {STAGE_LABEL[s]}
+                {stageLabel(s, kind)}
               </option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-slate-500">{STAGE_HINT[stage]}</p>
+          <p className="mt-1 text-xs text-slate-500">{stageHint(stage, kind)}</p>
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">

@@ -18,12 +18,14 @@ import { campaignClients, campaigns, clients, touches } from '../db/schema'
  */
 const DEFINITIONS = [
   {
+    kind: 'return' as const,
     name: 'Крупные разовые (чек от 50 тыс.)',
     description:
       'Купили ровно один раз на сумму от 50 000 ₽ и не вернулись. Самый тёплый сегмент — начинаем с них.',
     where: sql`${clients.shipmentsCount} = 1 and ${clients.totalSum} >= 50000`,
   },
   {
+    kind: 'return' as const,
     name: 'Уходящие (3–12 мес. молчания)',
     description:
       'Покупали не один раз и перестали 3–12 месяцев назад. Ещё помнят компанию — возвращаются легче всех.',
@@ -38,6 +40,7 @@ const DEFINITIONS = [
      * 1305 компаний с чеком от 30 тысяч дают 245 млн, а хвост из 3091 компании —
      * 33 млн. Звонить хвосту дороже, чем он приносит.
      */
+    kind: 'return' as const,
     name: 'Давно ушедшие (больше года, чек от 30 тыс.)',
     description:
       'Покупали не один раз, но замолчали больше года назад. Крупные — те, ради кого стоит поднять трубку.',
@@ -47,6 +50,7 @@ const DEFINITIONS = [
                and ${clients.totalSum} >= 30000`,
   },
   {
+    kind: 'return' as const,
     name: 'Все разовые',
     description: 'Остальные, у кого ровно одна отгрузка за всё время.',
     where: sql`${clients.shipmentsCount} = 1 and ${clients.totalSum} > 0`,
@@ -81,8 +85,15 @@ export async function syncCampaigns(sourceFile?: string): Promise<CampaignSyncRe
     if (!camp) {
       ;[camp] = await db
         .insert(campaigns)
-        .values({ name: def.name, description: def.description, sourceFile })
+        .values({ name: def.name, description: def.description, kind: def.kind, sourceFile })
         .returning({ id: campaigns.id })
+    } else {
+      // Кампании, созданные до появления типа, помечаем задним числом —
+      // иначе на старых установках вторая воронка так и не появится.
+      await db
+        .update(campaigns)
+        .set({ kind: def.kind, description: def.description })
+        .where(and(eq(campaigns.id, camp.id), sql`${campaigns.kind} <> ${def.kind}`))
     }
 
     // Убираем тех, кто правилу больше не отвечает. Сборка умела только

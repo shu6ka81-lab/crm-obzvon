@@ -64,6 +64,13 @@
       "when": 1787242033061,
       "tag": "0008_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787323790110,
+      "tag": "0009_campaign_kind",
+      "breakpoints": true
     }
   ]
 }

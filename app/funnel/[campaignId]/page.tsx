@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getCampaign, getStageBoard, getStageFunnel } from '@/lib/queries'
-import { FUNNEL_ORDER, STAGE_HINT, STAGE_LABEL, type Stage } from '@/lib/funnel'
+import { FUNNEL_ORDER, stageHint, stageLabel, type CampaignKind, type Stage } from '@/lib/funnel'
 import { money, num } from '@/lib/format'
 import { Board } from './Board'
 
@@ -26,6 +26,7 @@ export default async function FunnelPage({
     getStageFunnel(campaignId),
     getStageBoard(campaignId, PER_COLUMN),
   ])
+  const kind = campaign.kind as CampaignKind
   const byStage = new Map(rows.map((r) => [r.stage as Stage, r]))
   const top = byStage.get('lead')?.reached ?? 0
   const lost = byStage.get('lost')
@@ -51,7 +52,7 @@ export default async function FunnelPage({
         </Link>
       </div>
 
-      <Board campaignId={campaignId} columns={columns} perColumn={PER_COLUMN} />
+      <Board campaignId={campaignId} kind={kind} columns={columns} perColumn={PER_COLUMN} />
 
       <div>
         <h2 className="text-sm font-semibold text-slate-900">Конверсия по ступеням</h2>
@@ -82,8 +83,8 @@ export default async function FunnelPage({
               return (
                 <tr key={stage}>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-slate-900">{STAGE_LABEL[stage]}</div>
-                    <div className="text-xs text-slate-400">{STAGE_HINT[stage]}</div>
+                    <div className="font-medium text-slate-900">{stageLabel(stage, kind)}</div>
+                    <div className="text-xs text-slate-400">{stageHint(stage, kind)}</div>
                     <div className="mt-1.5 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-slate-100">
                       <div className="h-full rounded-full bg-slate-800" style={{ width: `${width}%` }} />
                     </div>

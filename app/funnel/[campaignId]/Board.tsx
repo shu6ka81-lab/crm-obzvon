@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { moveStage } from '@/app/actions'
-import { ALL_STAGES, STAGE_HINT, STAGE_LABEL, type Stage } from '@/lib/funnel'
+import { ALL_STAGES, stageHint, stageLabel, type CampaignKind, type Stage } from '@/lib/funnel'
 import type { BoardCard, BoardColumn } from '@/lib/queries'
 import { daysAgoLabel, money, num } from '@/lib/format'
 
@@ -21,10 +21,12 @@ const COLUMN_TONE: Record<Stage, string> = {
 
 export function Board({
   campaignId,
+  kind,
   columns,
   perColumn,
 }: {
   campaignId: number
+  kind: CampaignKind
   columns: BoardColumn[]
   perColumn: number
 }) {
@@ -115,12 +117,12 @@ export function Board({
             >
               <div className="shrink-0 px-3 pb-2 pt-2.5">
                 <div className="flex items-baseline justify-between gap-2">
-                  <h3 className="text-sm font-semibold text-slate-900">{STAGE_LABEL[stage]}</h3>
+                  <h3 className="text-sm font-semibold text-slate-900">{stageLabel(stage, kind)}</h3>
                   <span className="text-sm font-semibold tabular-nums text-slate-500">
                     {num(total)}
                   </span>
                 </div>
-                <p className="mt-0.5 text-xs leading-tight text-slate-400">{STAGE_HINT[stage]}</p>
+                <p className="mt-0.5 text-xs leading-tight text-slate-400">{stageHint(stage, kind)}</p>
                 {col && col.money > 0 ? (
                   <p className="mt-1 text-xs tabular-nums text-slate-500">{money(col.money)}</p>
                 ) : null}
@@ -170,7 +172,7 @@ export function Board({
                     >
                       {ALL_STAGES.map((s) => (
                         <option key={s} value={s}>
-                          {STAGE_LABEL[s]}
+                          {stageLabel(s, kind)}
                         </option>
                       ))}
                     </select>
