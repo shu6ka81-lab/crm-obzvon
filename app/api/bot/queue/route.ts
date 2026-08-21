@@ -70,6 +70,11 @@ export async function GET(req: NextRequest) {
       linkId: callRequests.campaignClientId,
       phone: callRequests.phone,
       note: callRequests.note,
+      campaignName: campaigns.name,
+      campaignKind: campaigns.kind,
+      stage: campaignClients.stage,
+      presetSupplier: campaignClients.presetSupplier,
+      presetBudget: campaignClients.presetBudget,
       name: clients.name,
       contactPerson: clients.contactPerson,
       inn: clients.inn,
@@ -81,6 +86,11 @@ export async function GET(req: NextRequest) {
     })
     .from(callRequests)
     .innerJoin(clients, eq(clients.id, callRequests.clientId))
+    // Обвязка кампании нужна роботу для первой фразы: возврат ушедшего
+    // клиента и холодный звонок начинаются по-разному. Соединение внешнее —
+    // позвонить можно и тому, кто ни в одной очереди не стоит.
+    .leftJoin(campaignClients, eq(campaignClients.id, callRequests.campaignClientId))
+    .leftJoin(campaigns, eq(campaigns.id, callRequests.campaignId))
     .where(eq(callRequests.state, 'waiting'))
     .orderBy(asc(callRequests.createdAt))
     .limit(limit)
@@ -102,6 +112,16 @@ export async function GET(req: NextRequest) {
     ne(clients.phone, ''),
     isNull(clients.deletedAt),
     sql`${campaignClients.state} in ('pending', 'in_progress')`,
+    /*
+     * Кто уже стоит отдельной заявкой — в общую очередь не попадает.
+     * Иначе один и тот же человек уезжает роботу дважды за прогон:
+     * заявкой и просто по списку, и получает два звонка подряд.
+     */
+    sql`not exists (
+      select 1 from ${callRequests} cr
+      where cr.client_id = ${clients.id}
+        and cr.state in ('waiting', 'calling')
+    )`,
   ]
   if (Number.isInteger(campaignId) && campaignId > 0) {
     where.push(eq(campaignClients.campaignId, campaignId))
@@ -164,7 +184,17 @@ export async function GET(req: NextRequest) {
       contact: r.contactPerson,
       inn: r.inn,
       note: r.note,
-      kind: 'request',
+      campaign: r.campaignName,
+      kind: r.campaignKind ?? 'acquisition',
+      stage: r.stage,
+      stageLabel: r.stage
+        ? stageLabel(r.stage as Stage, (r.campaignKind ?? 'acquisition') as CampaignKind)
+        : null,
+      byRequest: true,
+      competitor:
+        r.presetSupplier || r.presetBudget
+          ? { supplier: r.presetSupplier, quarterBudget: Number(r.presetBudget ?? 0) }
+          : null,
       history: {
         totalSum: Number(r.totalSum),
         shipments: Number(r.shipmentsCount),
