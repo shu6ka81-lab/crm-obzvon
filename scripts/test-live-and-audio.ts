@@ -159,6 +159,9 @@ async function main() {
   // -------------------------------------------- всё это видно в карточке
   await page.goto(clientUrl, { waitUntil: 'networkidle' })
 
+  if (await page.locator('text=Запись разговора не доехала').count()) {
+    throw new Error('система не нашла файл записи, хотя он только что загружен')
+  }
   const player = page.locator('audio')
   if ((await player.count()) === 0) throw new Error('в карточке нет проигрывателя записи')
   const src = await player.first().getAttribute('src')
@@ -169,6 +172,21 @@ async function main() {
   const bytes = (await audio.body()).length
   if (bytes !== wav.length) throw new Error(`отдалось ${bytes} байт вместо ${wav.length}`)
   console.log(`запись отдаётся целиком: ${bytes} байт, ${audio.headers()['content-type']}`)
+
+  // Длину браузер должен узнать САМ, до нажатия на «играть». Пока стояло
+  // preload="none", исправная запись показывалась как «0:00 / 0:00», и это
+  // выглядело так, будто звук не записался вовсе.
+  const seconds = await player.first().evaluate(
+    (el: HTMLAudioElement) =>
+      new Promise<number>((done) => {
+        if (el.readyState >= 1) return done(el.duration)
+        el.addEventListener('loadedmetadata', () => done(el.duration), { once: true })
+        el.addEventListener('error', () => done(-1), { once: true })
+        setTimeout(() => done(el.duration || 0), 15_000)
+      }),
+  )
+  if (!(seconds > 0)) throw new Error(`браузер не узнал длину записи: ${seconds}`)
+  console.log(`длина видна сразу: ${seconds.toFixed(1)} с`)
 
   // Берём именно верхнюю запись — свою. Прошлые прогоны оставили такие же
   const details = page.locator('details:has(summary:has-text("Расшифровка"))').first()
