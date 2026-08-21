@@ -255,15 +255,22 @@ export async function previewCampaignClients(
  * Перевести на другую стадию вне звонка — например, отметить отправку КП
  * или начало работы. Возвращает ошибку текстом, чтобы форма её показала.
  */
-export async function moveStage(formData: FormData) {
+export interface MoveResult {
+  ok: boolean
+  error?: string
+}
+
+export async function moveStage(input: unknown): Promise<MoveResult> {
   const schema = z.object({
     linkId: z.coerce.number().int().positive(),
     campaignId: z.coerce.number().int().positive(),
     stage: z.enum(['lead', 'contacted', 'audit', 'quote', 'decision', 'won', 'lost']),
     comment: z.string().trim().max(2000).optional(),
   })
-  const parsed = schema.safeParse(formEntries(formData))
-  if (!parsed.success) return
+  const parsed = schema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Некорректные данные' }
+  }
 
   const { linkId, campaignId, stage, comment } = parsed.data
   const db = await getDb()
@@ -275,7 +282,8 @@ export async function moveStage(formData: FormData) {
     .where(eq(campaignClients.id, linkId))
     .limit(1)
 
-  if (!current || current.stage === stage) return
+  if (!current) return { ok: false, error: 'Карточка не найдена' }
+  if (current.stage === stage) return { ok: true }
 
   await db
     .update(campaignClients)
@@ -299,7 +307,9 @@ export async function moveStage(formData: FormData) {
   revalidatePath(`/call/${campaignId}`)
   revalidatePath(`/call/${campaignId}/list`)
   revalidatePath(`/funnel/${campaignId}`)
+  revalidatePath('/clients', 'layout')
   revalidatePath('/')
+  return { ok: true }
 }
 
 export async function skipClient(campaignId: number, linkId: number) {

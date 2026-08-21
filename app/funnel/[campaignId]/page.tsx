@@ -1,10 +1,14 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getCampaign, getStageFunnel } from '@/lib/queries'
+import { getCampaign, getStageBoard, getStageFunnel } from '@/lib/queries'
 import { FUNNEL_ORDER, STAGE_HINT, STAGE_LABEL, type Stage } from '@/lib/funnel'
 import { money, num } from '@/lib/format'
+import { Board } from './Board'
 
 export const dynamic = 'force-dynamic'
+
+/** Сколько карточек показывать в колонке. Остальные — списком. */
+const PER_COLUMN = 40
 
 export default async function FunnelPage({
   params,
@@ -18,21 +22,42 @@ export default async function FunnelPage({
   const campaign = await getCampaign(campaignId)
   if (!campaign) notFound()
 
-  const rows = await getStageFunnel(campaignId)
+  const [rows, columns] = await Promise.all([
+    getStageFunnel(campaignId),
+    getStageBoard(campaignId, PER_COLUMN),
+  ])
   const byStage = new Map(rows.map((r) => [r.stage as Stage, r]))
   const top = byStage.get('lead')?.reached ?? 0
   const lost = byStage.get('lost')
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href={`/call/${campaignId}`} className="text-xs text-slate-500 hover:text-slate-900">
-          ← К обзвону
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <Link href={`/call/${campaignId}`} className="text-xs text-slate-500 hover:text-slate-900">
+            ← К обзвону
+          </Link>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight">Воронка · {campaign.name}</h1>
+          <p className="mt-1 max-w-3xl text-sm text-slate-500">
+            Кто на какой стадии. Карточку можно перетащить в соседнюю колонку — переход
+            запишется в историю клиента.
+          </p>
+        </div>
+        <Link
+          href={`/call/${campaignId}/list`}
+          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Весь список
         </Link>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight">Воронка · {campaign.name}</h1>
-        <p className="mt-1 max-w-3xl text-sm text-slate-500">
-          «Дошли» — сколько компаний находятся на этой стадии или прошли её дальше.
-          Конверсия считается от предыдущей ступени.
+      </div>
+
+      <Board campaignId={campaignId} columns={columns} perColumn={PER_COLUMN} />
+
+      <div>
+        <h2 className="text-sm font-semibold text-slate-900">Конверсия по ступеням</h2>
+        <p className="mt-0.5 max-w-3xl text-sm text-slate-500">
+          «Дошли» — сколько компаний находятся на этой стадии или прошли её дальше. Конверсия
+          считается от предыдущей ступени.
         </p>
       </div>
 

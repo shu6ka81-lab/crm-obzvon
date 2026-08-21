@@ -55,12 +55,20 @@ export default async function Home() {
                     <p className="mt-1 max-w-2xl text-sm text-slate-500">{c.description}</p>
                   ) : null}
                 </div>
-                <Link
-                  href={`/call/${c.id}`}
-                  className="shrink-0 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
-                >
-                  Звонить
-                </Link>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Link
+                    href={`/funnel/${c.id}`}
+                    className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Воронка
+                  </Link>
+                  <Link
+                    href={`/call/${c.id}`}
+                    className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
+                  >
+                    Звонить
+                  </Link>
+                </div>
               </div>
 
               <div className="mt-5 grid grid-cols-2 gap-6 sm:grid-cols-6">

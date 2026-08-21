@@ -188,6 +188,109 @@ export function clientKey(c: {
   return c.code1c ?? c.inn ?? String(c.id)
 }
 
+export interface BoardCard {
+  linkId: number
+  clientId: number
+  key: string
+  name: string
+  totalSum: number
+  stage: string
+  stageChangedAt: string | null
+  lastOrderDate: string | null
+  touchCount: number
+}
+
+export interface BoardColumn {
+  stage: string
+  total: number
+  money: number
+  cards: BoardCard[]
+}
+
+/**
+ * Доска по стадиям: карточки клиентов, разложенные по колонкам.
+ *
+ * Берём не все карточки, а начало каждой колонки. В «Все разовые» две с
+ * половиной тысячи лидов — выгружать их целиком, чтобы человек посмотрел
+ * верхние двадцать, бессмысленно. Счётчик колонки при этом честный, по всем.
+ */
+export async function getStageBoard(campaignId: number, perColumn = 40): Promise<BoardColumn[]> {
+  const db = await getDb()
+
+  const totals = await db
+    .select({
+      stage: campaignClients.stage,
+      total: sql<number>`count(*)::int`,
+      money: sql<number>`coalesce(sum(${clients.totalSum}), 0)::bigint`,
+    })
+    .from(campaignClients)
+    .innerJoin(clients, eq(clients.id, campaignClients.clientId))
+    .where(eq(campaignClients.campaignId, campaignId))
+    .groupBy(campaignClients.stage)
+
+  // Нумеруем внутри стадии и отрезаем хвост — одним запросом, без выборки всего
+  const ranked = await db.execute(sql`
+    select * from (
+      select cc.id            as link_id,
+             c.id             as client_id,
+             coalesce(c.code_1c, c.inn, c.id::text) as key,
+             c.name           as name,
+             c.total_sum      as total_sum,
+             cc.stage         as stage,
+             cc.stage_changed_at as stage_changed_at,
+             c.last_order_date as last_order_date,
+             (select count(*)::int from touches t
+               where t.client_id = c.id and t.campaign_id = ${campaignId}) as touch_count,
+             row_number() over (
+               partition by cc.stage
+               order by c.total_sum desc nulls last, cc.position
+             ) as rn
+        from campaign_clients cc
+        join clients c on c.id = cc.client_id
+       where cc.campaign_id = ${campaignId}
+    ) q
+    where q.rn <= ${perColumn}
+    order by q.stage, q.rn
+  `)
+
+  type Raw = {
+    link_id: number
+    client_id: number
+    key: string
+    name: string
+    total_sum: string | number
+    stage: string
+    stage_changed_at: string | null
+    last_order_date: string | null
+    touch_count: number
+  }
+  const rows = ((ranked as unknown as { rows?: Raw[] }).rows ?? (ranked as unknown as Raw[])) ?? []
+
+  const byStage = new Map<string, BoardCard[]>()
+  for (const r of rows) {
+    const list = byStage.get(r.stage) ?? []
+    list.push({
+      linkId: Number(r.link_id),
+      clientId: Number(r.client_id),
+      key: String(r.key),
+      name: String(r.name),
+      totalSum: Number(r.total_sum ?? 0),
+      stage: r.stage,
+      stageChangedAt: r.stage_changed_at ? String(r.stage_changed_at) : null,
+      lastOrderDate: r.last_order_date ? String(r.last_order_date) : null,
+      touchCount: Number(r.touch_count ?? 0),
+    })
+    byStage.set(r.stage, list)
+  }
+
+  return totals.map((t) => ({
+    stage: t.stage,
+    total: Number(t.total),
+    money: Number(t.money),
+    cards: byStage.get(t.stage) ?? [],
+  }))
+}
+
 /**
  * В какой очереди стоит клиент. Нужно, чтобы с его карточки можно было
  * работать так же, как из обзвона: записать разговор, заполнить квалификацию
