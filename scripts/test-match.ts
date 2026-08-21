@@ -6,11 +6,15 @@
  * из настоящих заявок и прошлых ошибок: «карандаши» не находили «карандаш»,
  * а по запросу «бумага а4» первыми шли лотки для бумаг.
  *
- * Запуск: npx tsx scripts/test-match.ts
+ * Прайс берётся из базы, а если она занята — из выгрузки JSON:
+ *
+ *   npx tsx scripts/test-match.ts
+ *   npx tsx scripts/test-match.ts прайс.json
  */
+import { readFileSync } from 'node:fs'
 import { getDb } from '../lib/db'
 import { catalogItems } from '../lib/db/schema'
-import { CatalogIndex } from '../lib/catalog/match'
+import { CatalogIndex, parseRequestLines } from '../lib/catalog/match'
 
 /** запрос → что должно быть в наименовании первой строки */
 const CASES: [string, string][] = [
@@ -29,14 +33,33 @@ const CASES: [string, string][] = [
   ['ножницы канцелярские', 'ножниц'],
   ['клей карандаш', 'клей'],
   ['кофе растворимый', 'кофе'],
+  // Живой звонок 21 августа: клиент попросил доску, получил губку для неё.
+  // Две причины сразу — «магнитно-маркерная» не разбиралась на части,
+  // а главным словом запроса считалось прилагательное «маркерную».
+  ['маркерную доску', 'доска магнитно-маркерная'],
+  ['доска магнитно-маркерная', 'доска магнитно-маркерная'],
+  ['влажные салфетки', 'салфетк'],
+  ['простые карандаши', 'карандаш прост'],
+  ['туалетная бумага', 'туалетная'],
 ]
+
+/** Заявка целиком — как её надиктовали роботу по телефону. */
+const CALL = `бумага А4 100 пачек
+карандаши простые 100 штук
+ручки гелевые 100 штук
+маркерную доску`
 
 /** Запросы, которых в прайсе быть не должно: уверенность обязана просесть. */
 const NONSENSE = ['экскаватор гусеничный', 'абонемент в бассейн', 'квартальный отчёт']
 
-async function main() {
+async function loadItems(): Promise<any[]> {
+  // Выгрузка нужна, когда база занята одним процессом: в разработке её
+  // держит сам сайт, и подключиться вторым нельзя.
+  const dump = process.argv[2]
+  if (dump) return JSON.parse(readFileSync(dump, 'utf8'))
+
   const db = await getDb()
-  const items = await db
+  return db
     .select({
       id: catalogItems.id,
       code: catalogItems.code,
@@ -50,6 +73,10 @@ async function main() {
       searchText: catalogItems.searchText,
     })
     .from(catalogItems)
+}
+
+async function main() {
+  const items = await loadItems()
 
   const t0 = Date.now()
   const index = new CatalogIndex(items)
@@ -64,6 +91,20 @@ async function main() {
     console.log(
       `${ok ? '✓' : '✗'} ${String(top?.confidence ?? 0).padStart(3)}%  «${query}»\n` +
         `        → ${top ? top.item.name.slice(0, 66) : 'ничего не найдено'}`,
+    )
+  }
+
+  console.log('\n--- заявка с живого звонка ---')
+  for (const line of parseRequestLines(CALL)) {
+    const top = index.search(line.name, 1)[0]
+    // Ниже 60% строка уходит в КП с пометкой «проверьте». По надиктованной
+    // заявке так быть не должно — иначе менеджер перепроверяет всё подряд.
+    const ok = Boolean(top) && top.confidence >= 60
+    if (!ok) bad++
+    console.log(
+      `${ok ? '✓' : '✗'} ${String(top?.confidence ?? 0).padStart(3)}%  ` +
+        `«${line.raw}» ×${line.qty}\n        → ` +
+        `${top ? top.item.name.slice(0, 62) : 'ничего'}`,
     )
   }
 
