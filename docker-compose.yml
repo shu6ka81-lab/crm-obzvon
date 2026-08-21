@@ -27,6 +27,9 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-crm}
       SESSION_SECRET: ${SESSION_SECRET:?задайте SESSION_SECRET в .env}
       NODE_ENV: production
+      # Ключ голосового робота. Передаётся при запуске, а не при сборке:
+      # иначе он окажется внутри образа и сменить его без пересборки нельзя.
+      BOT_TOKEN: ${BOT_TOKEN:-}
     ports:
       # Только на localhost — наружу пускает обратный прокси с HTTPS
       - '127.0.0.1:3000:3000'
