@@ -2,9 +2,10 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
-import { campaignClients } from '@/lib/db/schema'
+import { callRequests, campaignClients } from '@/lib/db/schema'
 import { checkBotToken } from '@/lib/botAuth'
 import { recordTouch } from '@/lib/touch'
+import { buildQuoteFromCall } from '@/lib/quoteFromCall'
 import type { Stage } from '@/lib/funnel'
 
 export const dynamic = 'force-dynamic'
@@ -32,6 +33,8 @@ type TouchOutcome = 'reached' | 'no_answer' | 'busy' | 'wrong_number' | 'callbac
 
 const Body = z.object({
   clientId: z.coerce.number().int().positive(),
+  /** Заявка, по которой звонили, — её надо закрыть, иначе повиснет в «звоним». */
+  requestId: z.coerce.number().int().positive().optional(),
   campaignId: z.coerce.number().int().positive().optional(),
   linkId: z.coerce.number().int().positive().optional(),
 
@@ -57,6 +60,12 @@ const Body = z.object({
 
   nextStepDate: z.string().trim().max(32).optional(),
   nextStepTitle: z.string().trim().max(300).optional(),
+
+  /**
+   * Что клиент попросил посчитать — построчно, как он это назвал.
+   * Если робот не выделил список, попробуем достать его из расшифровки.
+   */
+  items: z.array(z.string().trim().max(300)).max(200).optional(),
 })
 
 export async function POST(req: NextRequest) {
@@ -126,9 +135,45 @@ export async function POST(req: NextRequest) {
     currentStage,
   })
 
+  /*
+   * Клиент по телефону назвал, что ему нужно, — собираем черновик КП сразу.
+   * Раньше между «положил трубку» и «отправил предложение» лежал час ручной
+   * работы, и часть заявок этот час не переживала.
+   */
+  let quote: Awaited<ReturnType<typeof buildQuoteFromCall>> = null
+  /*
+   * Пробуем на любом состоявшемся разговоре, а не только там, где робот
+   * отметил «договорились о просчёте». Человек называет, что ему нужно,
+   * посреди обычной беседы и отдельной галочки при этом не ставит.
+   * Если в разговоре ничего похожего на заказ нет — просто ничего не выйдет.
+   */
+  if (d.items?.length || (outcome === 'reached' && d.transcript)) {
+    try {
+      quote = await buildQuoteFromCall({
+        clientId: d.clientId,
+        campaignClientId: linkId,
+        items: d.items,
+        transcript: d.transcript ?? null,
+        note: d.summary ?? null,
+      })
+    } catch (e) {
+      // Не сложилось — звонок всё равно записан. Терять разговор из-за
+      // неудачной сборки предложения нельзя.
+      console.error('КП из разговора не собралось:', e)
+    }
+  }
+
+  if (d.requestId) {
+    await db
+      .update(callRequests)
+      .set({ state: 'done', finishedAt: new Date() })
+      .where(eq(callRequests.id, d.requestId))
+  }
+
   return NextResponse.json({
     ok: true,
     touchId: res.touchId,
     stage: { from: res.stageFrom, to: res.stageTo },
+    quote,
   })
 }

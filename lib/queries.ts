@@ -6,6 +6,8 @@ import {
   campaigns,
   clients,
   qualifications,
+  quoteItems,
+  quotes,
   stageChanges,
   tasks,
   touches,
@@ -338,6 +340,27 @@ export async function getClientByKey(key: string) {
     )
     .limit(1)
   return row ?? null
+}
+
+/** Предложения клиента — в карточке нужны хотя бы ссылками. */
+export async function getClientQuotes(clientId: number) {
+  const db = await getDb()
+  return db
+    .select({
+      id: quotes.id,
+      status: quotes.status,
+      totalSale: quotes.totalSale,
+      totalCost: quotes.totalCost,
+      note: quotes.note,
+      createdAt: quotes.createdAt,
+      lines: sql<number>`(
+        select count(*)::int from ${quoteItems} where ${quoteItems.quoteId} = ${quotes.id}
+      )`,
+    })
+    .from(quotes)
+    .where(eq(quotes.clientId, clientId))
+    .orderBy(desc(quotes.createdAt))
+    .limit(20)
 }
 
 export async function getTouches(clientId: number) {

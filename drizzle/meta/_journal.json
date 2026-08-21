@@ -78,6 +78,13 @@
       "when": 1787324939364,
       "tag": "0010_bot_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787326892166,
+      "tag": "0011_call_requests",
+      "breakpoints": true
     }
   ]
 }

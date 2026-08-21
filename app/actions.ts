@@ -8,8 +8,8 @@ import { and, asc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { getDb } from '@/lib/db'
 import { recordTouch } from '@/lib/touch'
-import { listCampaignClients } from '@/lib/queries'
-import { campaignClients, clients, stageChanges, tasks, users } from '@/lib/db/schema'
+import { getClientCampaignLink, listCampaignClients } from '@/lib/queries'
+import { callRequests, campaignClients, clients, stageChanges, tasks, users } from '@/lib/db/schema'
 
 const TouchSchema = z.object({
   /**
@@ -164,6 +164,64 @@ export async function saveClientContacts(
 
   revalidatePath('/clients', 'layout')
   return { ok: true, message: d.phone ? 'Сохранено' : 'Сохранено, телефон пуст' }
+}
+
+export interface CallRequestState {
+  ok: boolean
+  message: string
+}
+
+/**
+ * Заявка роботу: позвонить этому клиенту.
+ *
+ * Прямо отсюда набрать номер нельзя. Система стоит на сервере, а звонит
+ * робот на машине, до которой снаружи не достучаться — ему нужны SIP через
+ * VPN и доступ к OpenAI, чего с российского сервера нет. Поэтому кнопка
+ * оставляет заявку, а робот забирает её сам: при запущенном ожидании
+ * это пара секунд.
+ */
+export async function requestBotCall(
+  _prev: CallRequestState | null,
+  formData: FormData,
+): Promise<CallRequestState> {
+  const schema = z.object({ clientId: z.coerce.number().int().positive() })
+  const parsed = schema.safeParse(formEntries(formData))
+  if (!parsed.success) return { ok: false, message: 'Клиент не найден' }
+
+  const db = await getDb()
+  const [client] = await db
+    .select({ id: clients.id, phone: clients.phone, name: clients.name })
+    .from(clients)
+    .where(eq(clients.id, parsed.data.clientId))
+    .limit(1)
+
+  if (!client) return { ok: false, message: 'Клиент не найден' }
+  if (!client.phone) return { ok: false, message: 'Сначала впишите телефон' }
+
+  // Две заявки на одного клиента — два звонка подряд. Так делать не надо.
+  const [pending] = await db
+    .select({ id: callRequests.id })
+    .from(callRequests)
+    .where(
+      and(
+        eq(callRequests.clientId, client.id),
+        sql`${callRequests.state} in ('waiting', 'calling')`,
+      ),
+    )
+    .limit(1)
+  if (pending) return { ok: true, message: 'Заявка уже в очереди у робота' }
+
+  const link = await getClientCampaignLink(client.id)
+  await db.insert(callRequests).values({
+    clientId: client.id,
+    campaignId: link?.campaignId ?? null,
+    campaignClientId: link?.linkId ?? null,
+    requestedBy: await currentUserId(),
+    phone: client.phone,
+  })
+
+  revalidatePath('/clients', 'layout')
+  return { ok: true, message: 'Робот позвонит — заявка в очереди' }
 }
 
 export interface CampaignPreviewRow {

@@ -394,6 +394,47 @@ export const quoteStatus = pgEnum('quote_status', ['draft', 'sent', 'won', 'lost
  * Ключевой артефакт стадии «Аудит цен»: клиент присылает, что закупает,
  * мы отвечаем ценами по своему прайсу.
  */
+export const callRequestState = pgEnum('call_request_state', [
+  'waiting', // ждёт, когда робот возьмёт
+  'calling', // робот взял и звонит
+  'done', // отзвонился
+  'failed', // не смог
+  'cancelled',
+])
+
+/**
+ * Заявка на звонок роботом.
+ *
+ * Нажать кнопку и сразу услышать гудки нельзя: система стоит на сервере,
+ * а робот — на машине, до которой снаружи не достучаться (ему нужны SIP
+ * через VPN и доступ к OpenAI, чего с российского сервера нет). Поэтому
+ * кнопка оставляет заявку, а робот сам её забирает — при запущенном
+ * ожидании это секунды.
+ */
+export const callRequests = pgTable(
+  'call_requests',
+  {
+    id: serial('id').primaryKey(),
+    clientId: integer('client_id')
+      .notNull()
+      .references(() => clients.id),
+    campaignId: integer('campaign_id').references(() => campaigns.id),
+    campaignClientId: integer('campaign_client_id').references(() => campaignClients.id),
+    requestedBy: integer('requested_by').references(() => users.id),
+
+    state: callRequestState('state').notNull().default('waiting'),
+    /** Куда звонить — фиксируем на момент заявки, номер могут поправить. */
+    phone: varchar('phone', { length: 64 }).notNull(),
+    note: text('note'),
+    error: text('error'),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    takenAt: timestamp('taken_at', { withTimezone: true }),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (t) => [index('call_requests_state_idx').on(t.state, t.createdAt)],
+)
+
 /**
  * Настройки одной строкой на ключ. Отдельная таблица под каждую мелочь
  * не окупается, а реквизиты для КП где-то хранить надо.

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { and, asc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
-import { campaignClients, campaigns, clients } from '@/lib/db/schema'
+import { callRequests, campaignClients, campaigns, clients } from '@/lib/db/schema'
 import { checkBotToken } from '@/lib/botAuth'
 import { stageLabel, type CampaignKind, type Stage } from '@/lib/funnel'
 
@@ -27,6 +27,59 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 10, 1), 100)
 
   const db = await getDb()
+
+  /*
+   * Заявки, которые кто-то нажал руками, идут вперёд очереди: человек ждёт
+   * этот звонок сейчас, а очередь подождёт.
+   *
+   * Зависшие возвращаем в работу. Робот мог упасть посреди разговора, и
+   * заявка осталась бы в «звоним» навсегда — с виду работа идёт, на деле
+   * не происходит ничего.
+   */
+  await db
+    .update(callRequests)
+    .set({ state: 'waiting', takenAt: null })
+    .where(
+      and(
+        eq(callRequests.state, 'calling'),
+        sql`${callRequests.takenAt} < now() - interval '15 minutes'`,
+      ),
+    )
+
+  const requested = await db
+    .select({
+      requestId: callRequests.id,
+      clientId: callRequests.clientId,
+      campaignId: callRequests.campaignId,
+      linkId: callRequests.campaignClientId,
+      phone: callRequests.phone,
+      note: callRequests.note,
+      name: clients.name,
+      contactPerson: clients.contactPerson,
+      inn: clients.inn,
+      totalSum: clients.totalSum,
+      shipmentsCount: clients.shipmentsCount,
+      avgCheck: clients.avgCheck,
+      lastOrderDate: clients.lastOrderDate,
+      manager1c: clients.manager1c,
+    })
+    .from(callRequests)
+    .innerJoin(clients, eq(clients.id, callRequests.clientId))
+    .where(eq(callRequests.state, 'waiting'))
+    .orderBy(asc(callRequests.createdAt))
+    .limit(limit)
+
+  if (requested.length > 0) {
+    await db
+      .update(callRequests)
+      .set({ state: 'calling', takenAt: new Date() })
+      .where(
+        inArray(
+          callRequests.id,
+          requested.map((r) => r.requestId),
+        ),
+      )
+  }
 
   const where = [
     isNotNull(clients.phone),
@@ -84,6 +137,26 @@ export async function GET(req: NextRequest) {
     )
 
   return NextResponse.json({
+    // Заявки руками — вперёд очереди: человек ждёт этот звонок сейчас
+    requests: requested.map((r) => ({
+      requestId: r.requestId,
+      clientId: r.clientId,
+      campaignId: r.campaignId,
+      linkId: r.linkId,
+      name: r.name,
+      phone: r.phone,
+      contact: r.contactPerson,
+      inn: r.inn,
+      note: r.note,
+      kind: 'request',
+      history: {
+        totalSum: Number(r.totalSum),
+        shipments: Number(r.shipmentsCount),
+        avgCheck: Number(r.avgCheck),
+        lastOrderDate: r.lastOrderDate ? String(r.lastOrderDate) : null,
+        manager: r.manager1c,
+      },
+    })),
     leads: rows.map((r) => ({
       linkId: r.linkId,
       clientId: r.clientId,
